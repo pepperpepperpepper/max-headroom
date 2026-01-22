@@ -1,0 +1,29 @@
+name: Flatpak
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/com.maxheadroom.Headroom.json
+          bundle: headroom.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: headroom-flatpak
+          path: headroom.flatpak

@@ -1,0 +1,27 @@
+# Maintainer: Headroom Maintainers <maintainers@example.com>
+
+pkgname=headroom
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="PipeWire-first mixer, patchbay, and visualizers"
+arch=('x86_64')
+url="https://example.com/headroom"
+license=('custom')
+depends=('qt6-base' 'pipewire' 'libsndfile' 'ncurses')
+makedepends=('cmake' 'ninja' 'pkgconf')
+
+# TODO: replace with a release tarball or git source.
+source=()
+sha256sums=()
+
+build() {
+  cmake -S . -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DHEADROOM_BUILD_TUI=ON \
+    -DHEADROOM_BUILD_CLI=ON
+  cmake --build build
+}
+
+package() {
+  DESTDIR="${pkgdir}" cmake --install build
+}

@@ -1,0 +1,50 @@
+{
+  "app-id": "com.maxheadroom.Headroom",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.7",
+  "sdk": "org.kde.Sdk",
+  "command": "headroom",
+  "rename-desktop-file": "com.maxheadroom.Headroom.desktop",
+  "rename-appdata-file": "com.maxheadroom.Headroom.metainfo.xml",
+  "rename-icon": "com.maxheadroom.Headroom",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--socket=pipewire",
+    "--talk-name=org.freedesktop.portal.Desktop",
+    "--env=QT_USE_PORTAL=1",
+    "--filesystem=xdg-music",
+    "--filesystem=xdg-documents"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/pkgconfig",
+    "/share/man",
+    "/share/doc"
+  ],
+  "modules": [
+    {
+      "name": "headroom",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DHEADROOM_BUILD_TUI=OFF"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "..",
+          "skip": [
+            ".github",
+            "build",
+            "flatpak",
+            "screenshots"
+          ]
+        }
+      ]
+    }
+  ]
+}

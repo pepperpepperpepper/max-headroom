@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Headroom
+Comment=PipeWire-first mixer, patchbay, and visualizers
+Exec=headroom
+Icon=com.maxheadroom.Headroom
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true

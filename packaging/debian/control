@@ -1,0 +1,23 @@
+Source: headroom
+Section: sound
+Priority: optional
+Maintainer: Headroom Maintainers <maintainers@example.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ ninja-build,
+ pkg-config,
+ qt6-base-dev,
+ libpipewire-0.3-dev,
+ libspa-0.2-dev,
+ libsndfile1-dev,
+ libncursesw5-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: headroom
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: PipeWire-first mixer, patchbay, and visualizers
+ Headroom is a PipeWire-first replacement for classic audio control tools,
+ with a patchbay-style node editor and real-time visualizers.
