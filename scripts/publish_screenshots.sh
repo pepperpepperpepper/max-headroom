@@ -67,7 +67,11 @@ if [[ ${#upload_paths[@]} -eq 0 ]]; then
   exit 1
 fi
 
-mapfile -t uploaded_urls < <(wtf-upload "${upload_paths[@]}")
+upload_output="$(wtf-upload "${upload_paths[@]}")" || {
+  echo "wtf-upload failed. Configure AWS credentials first (e.g. run: aws configure)." >&2
+  exit 1
+}
+mapfile -t uploaded_urls <<<"$upload_output"
 if [[ ${#uploaded_urls[@]} -ne ${#upload_paths[@]} ]]; then
   echo "Upload output mismatch: expected ${#upload_paths[@]} urls, got ${#uploaded_urls[@]}" >&2
   exit 1
