@@ -100,8 +100,9 @@ for i in "${!uploaded_urls[@]}"; do
   url_by_key["${upload_keys[$i]}"]="${uploaded_urls[$i]}"
 done
 
-INDEX_PATH="$ROOT/screenshots/index.html"
-tmp="$(mktemp)"
+tmpdir="$(mktemp -d)"
+INDEX_PATH="$tmpdir/index.html"
+tmp="$tmpdir/index.html.tmp"
 
 echo "[3/4] Write screenshots/index.html"
 cat >"$tmp" <<'EOF'
@@ -231,6 +232,8 @@ mv "$tmp" "$INDEX_PATH"
 
 echo "[4/4] Upload screenshots/index.html"
 index_url="$(wtf-upload --content-type text/html --cache-control "no-cache" "$INDEX_PATH")"
+
+rm -rf "$tmpdir" 2>/dev/null || true
 
 echo
 echo "Gallery:"

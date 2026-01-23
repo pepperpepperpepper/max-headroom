@@ -22,6 +22,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsTextItem>
 #include <QGraphicsView>
+#include <QFontMetrics>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -1352,6 +1353,7 @@ void PatchbayPage::rebuild()
   const qreal pad = 10;
   const qreal gapX = 26;
   const qreal gapY = 26;
+  const qreal labelMaxW = std::max<qreal>(60.0, (nodeW - 2 * pad - 2 * 8 - 16) / 2.0);
 
   int col = 0;
   int row = 0;
@@ -1508,9 +1510,20 @@ void PatchbayPage::rebuild()
         ellipse->setAcceptedMouseButtons(Qt::NoButton);
       }
 
-      const QString label = pinfo.audioChannel.isEmpty() ? displayBase : QStringLiteral("%1 (%2)").arg(displayBase, pinfo.audioChannel);
-      auto* text = new QGraphicsTextItem(label, root);
+      QString label = displayBase;
+      if (!pinfo.audioChannel.isEmpty()) {
+        const QString ch = pinfo.audioChannel.trimmed();
+        const bool redundant = ch.compare(displayBase, Qt::CaseInsensitive) == 0 ||
+            (!basePw.isEmpty() && ch.compare(basePw, Qt::CaseInsensitive) == 0) ||
+            (!pinfo.alias.isEmpty() && ch.compare(pinfo.alias, Qt::CaseInsensitive) == 0);
+        if (!ch.isEmpty() && !redundant) {
+          label = QStringLiteral("%1 (%2)").arg(displayBase, ch);
+        }
+      }
+
+      auto* text = new QGraphicsTextItem(root);
       text->setDefaultTextColor(QColor(170, 180, 200));
+      text->setToolTip(ellipse->toolTip());
       text->setData(kDataPortId, QVariant::fromValue(static_cast<quint32>(pinfo.id)));
       text->setData(kDataNodeId, QVariant::fromValue(static_cast<quint32>(n.id)));
       text->setData(kDataPortDir, isInput ? 1 : 0);
@@ -1518,6 +1531,8 @@ void PatchbayPage::rebuild()
       text->setData(kDataNodeName, n.name);
       text->setData(kDataPortName, pinfo.name);
       text->setData(kDataPortLocked, locked);
+      const QFontMetrics fm(text->font());
+      text->setPlainText(fm.elidedText(label, Qt::ElideRight, static_cast<int>(labelMaxW)));
       const qreal tx = isInput ? (center.x() + 8) : (center.x() - 8 - text->boundingRect().width());
       text->setPos(tx, py + 1);
       text->setZValue(4);

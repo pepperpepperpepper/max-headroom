@@ -34,6 +34,7 @@
 - Generate screenshots (uses a temporary PipeWire instance + demo tone streams):
   - `./scripts/make_screenshots.sh`
   - Output: `screenshots/*.png`
+  - Note: this container’s private PipeWire graph often won’t deliver real capture data (no session manager), so the screenshot script enables `HEADROOM_DEMO_VISUALIZER=1` to ensure the waveform/spectrum/spectrogram panels aren’t blank.
 
 - Upload screenshots:
   - `wtf-upload screenshots/*.png`
@@ -41,7 +42,7 @@
 
 - One-link gallery page (recommended):
   - `./scripts/publish_screenshots.sh`
-  - Regenerates `screenshots/*.png`, uploads them, rewrites `screenshots/index.html` with the new URLs, then uploads the HTML.
+  - Regenerates `screenshots/*.png`, uploads them, generates a temporary `index.html` pointing at the uploaded images, then uploads that HTML (does not modify the repo’s `screenshots/index.html`).
 
 ## Validation Notes (dev container)
 

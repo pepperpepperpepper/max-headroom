@@ -261,15 +261,39 @@ void VisualizerPage::repopulateSources()
 
   // If we were on Auto and now have stream targets, pick the first available target.
   if (!m_userHasChosenTarget && m_tap && !m_tap->captureSink() && m_tap->targetObject().isEmpty() && m_sources->count() > 1) {
+    int bestIndex = -1;
+    int bestScore = -1;
     for (int i = 0; i < m_sources->count(); ++i) {
       const auto specOpt = tapSpecFromVariant(m_sources->itemData(i));
       if (!specOpt.has_value()) {
         continue;
       }
-      if (!specOpt->targetObject.isEmpty()) {
-        m_sources->setCurrentIndex(i);
+      if (specOpt->targetObject.isEmpty()) {
+        continue;
+      }
+
+      // Heuristics: prefer port-object serials (numeric ids) and prefer non-sink capture.
+      int score = 0;
+      bool isNumber = false;
+      specOpt->targetObject.toUInt(&isNumber);
+      if (isNumber) {
+        score += 100;
+      }
+      if (!specOpt->captureSink) {
+        score += 10;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex >= 0) {
+      const auto specOpt = tapSpecFromVariant(m_sources->itemData(bestIndex));
+      if (specOpt.has_value()) {
+        m_sources->setCurrentIndex(bestIndex);
         m_tap->setTarget(specOpt->captureSink, specOpt->targetObject);
-        break;
       }
     }
   }

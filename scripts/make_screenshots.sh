@@ -61,7 +61,7 @@ export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
 "$ROOT/build/headroom" --tab mixer --screenshot "$OUT_DIR/mixer.png" --screenshot-delay-ms 700 >/dev/null 2>&1
-"$ROOT/build/headroom" --tab visualizer --screenshot "$OUT_DIR/visualizer.png" --screenshot-delay-ms 1400 >/dev/null 2>&1
+HEADROOM_DEMO_VISUALIZER=1 "$ROOT/build/headroom" --tab visualizer --screenshot "$OUT_DIR/visualizer.png" --screenshot-delay-ms 1400 >/dev/null 2>&1
 "$ROOT/build/headroom" --tab patchbay --screenshot "$OUT_DIR/patchbay.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --tab graph --screenshot "$OUT_DIR/graph.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --screenshot-window settings --screenshot "$OUT_DIR/settings.png" --screenshot-delay-ms 900 >/dev/null 2>&1

@@ -6,8 +6,13 @@
 #include <algorithm>
 #include <QPainter>
 #include <QTimer>
+#include <QtGlobal>
 
 #include <cmath>
+
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
+} // namespace
 
 VisualizerWidget::VisualizerWidget(AudioTap* tap, QWidget* parent)
     : QWidget(parent)
@@ -83,8 +88,13 @@ void VisualizerWidget::paintEvent(QPaintEvent* /*event*/)
   }
 
   // Header (meters).
-  const float peak = m_tap->peak();
-  const float rms = m_tap->rms();
+  const bool demo = qEnvironmentVariableIsSet("HEADROOM_DEMO_VISUALIZER");
+  float peak = m_tap->peak();
+  float rms = m_tap->rms();
+  if (demo && peak <= 0.0001f && rms <= 0.0001f) {
+    peak = 0.742f;
+    rms = 0.311f;
+  }
   p.setPen(QColor(185, 195, 215));
   p.drawText(QRect(inner.left(), inner.top() - 4, inner.width(), 16),
              Qt::AlignLeft | Qt::AlignVCenter,
@@ -97,6 +107,20 @@ void VisualizerWidget::paintEvent(QPaintEvent* /*event*/)
   const uint32_t sr = m_tap->sampleRate();
   const int windowSamples = std::max(1, static_cast<int>(std::llround(m_waveformHistorySeconds * static_cast<double>(sr))));
   m_tap->waveformMinMax(columns, windowSamples, mins, maxs);
+  if (demo && (mins.isEmpty() || maxs.isEmpty())) {
+    mins.resize(columns);
+    maxs.resize(columns);
+    for (int x = 0; x < columns; ++x) {
+      const float t = static_cast<float>(x) / static_cast<float>(std::max(1, columns - 1));
+      const float phase = t * 2.0f * kPi;
+      const float carrier = std::sin(phase * 3.0f) * 0.65f;
+      const float mod = std::sin(phase * 0.35f) * 0.18f;
+      const float spread = 0.12f + 0.06f * (0.5f + 0.5f * std::sin(phase * 1.6f));
+      const float v = carrier + mod;
+      mins[x] = std::clamp(v - spread, -1.0f, 1.0f);
+      maxs[x] = std::clamp(v + spread, -1.0f, 1.0f);
+    }
+  }
 
   const float midY = waveformRect.center().y();
   const float amp = (waveformRect.height() * 0.45f);
@@ -113,7 +137,22 @@ void VisualizerWidget::paintEvent(QPaintEvent* /*event*/)
   p.setRenderHint(QPainter::Antialiasing, true);
 
   // Spectrum.
-  const auto spectrum = m_tap->spectrum();
+  QVector<float> spectrum = m_tap->spectrum();
+  if (demo) {
+    if (spectrum.isEmpty()) {
+      spectrum.resize(256);
+    }
+    const int bins = spectrum.size();
+    for (int i = 0; i < bins; ++i) {
+      const float x = static_cast<float>(i) / static_cast<float>(std::max(1, bins - 1));
+      // A couple of smooth peaks + a gentle noise floor.
+      const float p1 = std::exp(-0.5f * std::pow((x - 0.10f) / 0.03f, 2.0f));
+      const float p2 = std::exp(-0.5f * std::pow((x - 0.23f) / 0.05f, 2.0f));
+      const float p3 = std::exp(-0.5f * std::pow((x - 0.58f) / 0.08f, 2.0f));
+      const float floor = 0.07f * (0.5f + 0.5f * std::sin(x * 18.0f));
+      spectrum[i] = std::clamp(0.75f * p1 + 0.55f * p2 + 0.40f * p3 + floor, 0.0f, 1.0f);
+    }
+  }
   if (!spectrum.isEmpty()) {
     p.setPen(Qt::NoPen);
     const int bins = spectrum.size();
@@ -132,15 +171,28 @@ void VisualizerWidget::paintEvent(QPaintEvent* /*event*/)
   }
 
   // Spectrogram.
-  const auto spec = m_tap->spectrogram();
+  auto spec = m_tap->spectrogram();
   if (spec.columns > 0 && spec.bins > 0 && spec.pixels.size() == spec.columns * spec.bins) {
     QImage img(spec.columns, spec.bins, QImage::Format_ARGB32);
-    for (int x = 0; x < spec.columns; ++x) {
-      const int srcCol = (spec.writeColumn + x) % spec.columns; // oldest -> newest
-      for (int y = 0; y < spec.bins; ++y) {
-        const int srcRow = spec.bins - 1 - y; // low at bottom
-        const int srcIndex = srcCol * spec.bins + srcRow;
-        img.setPixel(x, y, spec.pixels[srcIndex]);
+    if (demo) {
+      for (int x = 0; x < spec.columns; ++x) {
+        const float xf = static_cast<float>(x) / static_cast<float>(std::max(1, spec.columns - 1));
+        for (int y = 0; y < spec.bins; ++y) {
+          const float yf = static_cast<float>(y) / static_cast<float>(std::max(1, spec.bins - 1));
+          const float ridge = std::exp(-0.5f * std::pow((yf - (0.15f + 0.55f * xf)) / 0.06f, 2.0f));
+          const float ridge2 = std::exp(-0.5f * std::pow((yf - (0.55f - 0.35f * xf)) / 0.08f, 2.0f));
+          const float v = std::clamp(0.12f + 0.78f * ridge + 0.52f * ridge2, 0.0f, 1.0f);
+          img.setPixel(x, y, QColor::fromHsvF(0.62 - 0.62 * v, 0.9, 0.95).rgba());
+        }
+      }
+    } else {
+      for (int x = 0; x < spec.columns; ++x) {
+        const int srcCol = (spec.writeColumn + x) % spec.columns; // oldest -> newest
+        for (int y = 0; y < spec.bins; ++y) {
+          const int srcRow = spec.bins - 1 - y; // low at bottom
+          const int srcIndex = srcCol * spec.bins + srcRow;
+          img.setPixel(x, y, spec.pixels[srcIndex]);
+        }
       }
     }
 
