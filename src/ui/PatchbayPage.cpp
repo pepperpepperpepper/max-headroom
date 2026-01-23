@@ -104,6 +104,21 @@ QString formatPoint(const QPointF& p)
   return QStringLiteral("%1,%2").arg(qRound(p.x())).arg(qRound(p.y()));
 }
 
+bool isRedundantChannelLabel(const QString& label, const QString& ch)
+{
+  if (label.trimmed().isEmpty() || ch.trimmed().isEmpty()) {
+    return true;
+  }
+
+  const QString l = label.trimmed().toLower();
+  const QString c = ch.trimmed().toLower();
+  if (l == c) {
+    return true;
+  }
+
+  return l.endsWith(QStringLiteral("_%1").arg(c)) || l.endsWith(QStringLiteral("-%1").arg(c)) || l.endsWith(QStringLiteral(" %1").arg(c));
+}
+
 PortKind portKindFor(const PwPortInfo& p, const PwNodeInfo& node)
 {
   const QString mt = p.mediaType.trimmed().toLower();
@@ -1516,9 +1531,7 @@ void PatchbayPage::rebuild()
       QString label = displayBase;
       if (!pinfo.audioChannel.isEmpty()) {
         const QString ch = pinfo.audioChannel.trimmed();
-        const bool redundant = ch.compare(displayBase, Qt::CaseInsensitive) == 0 ||
-            (!basePw.isEmpty() && ch.compare(basePw, Qt::CaseInsensitive) == 0) ||
-            (!pinfo.alias.isEmpty() && ch.compare(pinfo.alias, Qt::CaseInsensitive) == 0);
+        const bool redundant = isRedundantChannelLabel(displayBase, ch) || isRedundantChannelLabel(basePw, ch) || isRedundantChannelLabel(pinfo.alias, ch);
         if (!ch.isEmpty() && !redundant) {
           label = QStringLiteral("%1 (%2)").arg(displayBase, ch);
         }

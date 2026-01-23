@@ -1,13 +1,18 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QElapsedTimer>
 #include <QIcon>
 #include <QImage>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QTimer>
+
+#include <memory>
 
 #include <pipewire/pipewire.h>
 
 #include "MainWindow.h"
+#include "backend/PipeWireGraph.h"
 #include "backend/EqConfig.h"
 #include "backend/LogStore.h"
 #include "ui/EngineDialog.h"
@@ -49,6 +54,14 @@ int main(int argc, char** argv)
                                          QStringLiteral("Select what to screenshot: main|settings|eq|engine|logs"),
                                          QStringLiteral("name"),
                                          QStringLiteral("main"));
+  QCommandLineOption screenshotWaitNodeOpt(
+      QStringList{QStringLiteral("screenshot-wait-node")},
+      QStringLiteral("Wait for a PipeWire node whose name/description matches REGEX (only affects --screenshot-window=main)"),
+      QStringLiteral("regex"));
+  QCommandLineOption screenshotWaitTimeoutOpt(QStringList{QStringLiteral("screenshot-wait-timeout-ms")},
+                                              QStringLiteral("Max time to wait for --screenshot-wait-node before taking the screenshot (ms)"),
+                                              QStringLiteral("ms"),
+                                              QStringLiteral("9000"));
   QCommandLineOption screenshotDelayOpt(QStringList{QStringLiteral("screenshot-delay-ms")},
                                         QStringLiteral("Delay before taking screenshot (ms)"),
                                         QStringLiteral("ms"),
@@ -58,6 +71,8 @@ int main(int argc, char** argv)
   parser.addOption(tapCaptureSinkOpt);
   parser.addOption(screenshotOpt);
   parser.addOption(screenshotWindowOpt);
+  parser.addOption(screenshotWaitNodeOpt);
+  parser.addOption(screenshotWaitTimeoutOpt);
   parser.addOption(screenshotDelayOpt);
   parser.process(app);
 
@@ -87,6 +102,7 @@ int main(int argc, char** argv)
       QWidget* target = &window;
 
       const QString which = parser.value(screenshotWindowOpt).trimmed().toLower();
+      const bool allowGraphWait = which == QStringLiteral("main");
       if (which == QStringLiteral("settings")) {
         auto* dlg = new SettingsDialog(window.graph(), &window);
         dlg->show();
@@ -107,7 +123,14 @@ int main(int argc, char** argv)
         target = dlg;
       }
 
-      QTimer::singleShot(d, target, [&app, target, path]() {
+      struct ScreenshotState final {
+        bool scheduled = false;
+        QMetaObject::Connection graphConn;
+      };
+      auto state = std::make_shared<ScreenshotState>();
+
+      auto takeScreenshot = [state, &app, target, path]() {
+        (void)state;
         const qreal dpr = target->devicePixelRatioF();
         const QSize size = target->size() * dpr;
 
@@ -121,7 +144,58 @@ int main(int argc, char** argv)
 
         image.save(path);
         app.quit();
-      });
+      };
+
+      auto scheduleAfterDelay = [state, d, target, takeScreenshot]() {
+        if (state->scheduled) {
+          return;
+        }
+        state->scheduled = true;
+        if (state->graphConn) {
+          QObject::disconnect(state->graphConn);
+          state->graphConn = {};
+        }
+        QTimer::singleShot(d, target, takeScreenshot);
+      };
+
+      const QString waitReStr = parser.value(screenshotWaitNodeOpt).trimmed();
+      if (allowGraphWait && !waitReStr.isEmpty() && window.graph()) {
+        QRegularExpression waitRe(waitReStr);
+        const bool valid = waitRe.isValid();
+
+        PipeWireGraph* graph = window.graph();
+        auto graphHasMatch = [graph, valid, waitRe]() -> bool {
+          if (!valid || !graph) {
+            return false;
+          }
+          const QList<PwNodeInfo> nodes = graph->nodes();
+          for (const auto& n : nodes) {
+            if (waitRe.match(n.name).hasMatch() || waitRe.match(n.description).hasMatch()) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        if (valid && graphHasMatch()) {
+          scheduleAfterDelay();
+        } else {
+          state->graphConn = QObject::connect(graph, &PipeWireGraph::graphChanged, target, [graphHasMatch, scheduleAfterDelay]() {
+            if (graphHasMatch()) {
+              scheduleAfterDelay();
+            }
+          });
+
+          bool okTimeout = false;
+          const int timeoutMs = parser.value(screenshotWaitTimeoutOpt).toInt(&okTimeout);
+          const int tmo = okTimeout ? std::max(0, timeoutMs) : 9000;
+          if (tmo > 0) {
+            QTimer::singleShot(tmo, target, scheduleAfterDelay);
+          }
+        }
+      } else {
+        scheduleAfterDelay();
+      }
     }
 
     ret = app.exec();
