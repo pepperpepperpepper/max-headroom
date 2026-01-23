@@ -1356,8 +1356,9 @@ void PatchbayPage::rebuild()
   const qreal labelMaxW = std::max<qreal>(60.0, (nodeW - 2 * pad - 2 * 8 - 16) / 2.0);
 
   int col = 0;
-  int row = 0;
   const int cols = 3;
+  qreal rowY = 0;
+  qreal rowMaxH = 0;
 
   int displayedNodes = 0;
 
@@ -1399,15 +1400,17 @@ void PatchbayPage::rebuild()
     const int portCount = std::max(inCount, outCount);
     const qreal nodeH = headerH + pad + portH * std::max(1, portCount) + pad;
 
+    ++displayedNodes;
+
     const qreal x = col * (nodeW + gapX);
-    const qreal y = row * (nodeH + gapY);
+    const qreal y = rowY;
     col++;
+    rowMaxH = std::max(rowMaxH, nodeH);
     if (col >= cols) {
       col = 0;
-      row++;
+      rowY += rowMaxH + gapY;
+      rowMaxH = 0;
     }
-
-    ++displayedNodes;
 
     QPointF pos(x, y);
     if (const auto saved = loadSavedNodePos(n.name)) {

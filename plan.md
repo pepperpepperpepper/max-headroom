@@ -35,6 +35,7 @@
   - `./scripts/make_screenshots.sh`
   - Output: `screenshots/*.png`
   - Note: `make_screenshots.sh` starts a *private* `dbus-daemon` + `pipewire` + `wireplumber` instance and prefers `snd-aloop` (when available) so the visualizers show real audio. If `snd-aloop` can’t be used, it falls back to a virtual null sink.
+  - Audio source: prefers `testdata/audio/demo.opus` (gitignored) and falls back to generated sine tones if missing.
 
 - Upload screenshots:
   - `wtf-upload screenshots/*.png`

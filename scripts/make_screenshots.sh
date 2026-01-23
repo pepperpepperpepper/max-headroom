@@ -107,15 +107,34 @@ if [[ -z "$PREFERRED_SINK" ]]; then
   PREFERRED_SINK="Headroom-NullSink2"
 fi
 
-# Two sine-wave playback streams (creates Stream/Output/Audio nodes).
-ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=120" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
-  | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
-      --target "$PREFERRED_SINK" --properties "node.name=Headroom-ToneA node.description=ToneA" - >/dev/null 2>&1 &
+DEMO_OPUS="$ROOT/testdata/audio/demo.opus"
+if [[ -f "$DEMO_OPUS" ]]; then
+  echo "Using demo audio: $DEMO_OPUS"
+else
+  echo "warn: missing $DEMO_OPUS; falling back to generated sine tones" >&2
+fi
+
+# Two playback streams (creates Stream/Output/Audio nodes).
+if [[ -f "$DEMO_OPUS" ]]; then
+  ffmpeg -hide_banner -loglevel error -stream_loop -1 -i "$DEMO_OPUS" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
+    | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
+        --target "$PREFERRED_SINK" --properties "node.name=Headroom-ToneA node.description=ToneA" - >/dev/null 2>&1 &
+else
+  ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=120" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
+    | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
+        --target "$PREFERRED_SINK" --properties "node.name=Headroom-ToneA node.description=ToneA" - >/dev/null 2>&1 &
+fi
 TONE1_PID=$!
 
-ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=120" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
-  | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
-      --target Headroom-NullSink2 --properties "node.name=Headroom-ToneB node.description=ToneB" - >/dev/null 2>&1 &
+if [[ -f "$DEMO_OPUS" ]]; then
+  ffmpeg -hide_banner -loglevel error -stream_loop -1 -i "$DEMO_OPUS" -af "volume=0.85" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
+    | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
+        --target Headroom-NullSink2 --properties "node.name=Headroom-ToneB node.description=ToneB" - >/dev/null 2>&1 &
+else
+  ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=120" -f f32le -ac 2 -ar 48000 - 2>/dev/null \
+    | XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
+        --target Headroom-NullSink2 --properties "node.name=Headroom-ToneB node.description=ToneB" - >/dev/null 2>&1 &
+fi
 TONE2_PID=$!
 
 # Enable EQ for the virtual sink so the Patchbay screenshot includes the EQ node.
