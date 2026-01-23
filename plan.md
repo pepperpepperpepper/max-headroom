@@ -34,7 +34,7 @@
 - Generate screenshots (uses a temporary PipeWire instance + demo tone streams):
   - `./scripts/make_screenshots.sh`
   - Output: `screenshots/*.png`
-  - Note: this container’s private PipeWire graph often won’t deliver real capture data (no session manager), so the screenshot script enables `HEADROOM_DEMO_VISUALIZER=1` to ensure the waveform/spectrum/spectrogram panels aren’t blank.
+  - Note: `make_screenshots.sh` starts a *private* `dbus-daemon` + `pipewire` + `wireplumber` instance and prefers `snd-aloop` (when available) so the visualizers show real audio. If `snd-aloop` can’t be used, it falls back to a virtual null sink.
 
 - Upload screenshots:
   - `wtf-upload screenshots/*.png`

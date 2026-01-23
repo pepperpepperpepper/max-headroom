@@ -133,14 +133,12 @@ void AudioTap::applySettings(const VisualizerSettings& settings)
   if (fftChanged) {
     m_fftSize = nextFftSize;
     m_hopSize = std::max<std::size_t>(1U, m_fftSize / 4U);
+  }
+
+  if (m_hann.size() != m_fftSize) {
     m_hann = dsp::Fft::hannWindow(m_fftSize);
-    m_fftRing.assign(m_fftSize, 0.0f);
-    m_fftWrite = 0;
-    m_fftTotal = 0;
-    m_sinceFrame = 0;
-  } else if (m_hann.size() != m_fftSize) {
-    m_hann = dsp::Fft::hannWindow(m_fftSize);
-  } else if (m_fftRing.size() != m_fftSize) {
+  }
+  if (m_fftRing.size() != m_fftSize) {
     m_fftRing.assign(m_fftSize, 0.0f);
     m_fftWrite = 0;
     m_fftTotal = 0;

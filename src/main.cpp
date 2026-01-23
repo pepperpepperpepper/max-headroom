@@ -37,6 +37,11 @@ int main(int argc, char** argv)
   QCommandLineOption tabOpt(QStringList{QStringLiteral("tab")},
                             QStringLiteral("Select initial tab: mixer|visualizer|patchbay|graph"),
                             QStringLiteral("name"));
+  QCommandLineOption tapTargetOpt(QStringList{QStringLiteral("tap-target")},
+                                  QStringLiteral("Set initial visualizer tap target (node name or object.serial)"),
+                                  QStringLiteral("target"));
+  QCommandLineOption tapCaptureSinkOpt(QStringList{QStringLiteral("tap-capture-sink")},
+                                       QStringLiteral("When used with --tap-target, capture the target as a sink monitor"));
   QCommandLineOption screenshotOpt(QStringList{QStringLiteral("screenshot")},
                                    QStringLiteral("Write a PNG screenshot to PATH and exit"),
                                    QStringLiteral("path"));
@@ -49,6 +54,8 @@ int main(int argc, char** argv)
                                         QStringLiteral("ms"),
                                         QStringLiteral("900"));
   parser.addOption(tabOpt);
+  parser.addOption(tapTargetOpt);
+  parser.addOption(tapCaptureSinkOpt);
   parser.addOption(screenshotOpt);
   parser.addOption(screenshotWindowOpt);
   parser.addOption(screenshotDelayOpt);
@@ -62,6 +69,13 @@ int main(int argc, char** argv)
 
     if (parser.isSet(tabOpt)) {
       window.selectTabByKey(parser.value(tabOpt));
+    }
+
+    if (parser.isSet(tapTargetOpt)) {
+      const QString target = parser.value(tapTargetOpt).trimmed();
+      if (!target.isEmpty() && target.toLower() != QStringLiteral("auto")) {
+        window.setVisualizerTapTarget(target, parser.isSet(tapCaptureSinkOpt));
+      }
     }
 
     if (parser.isSet(screenshotOpt)) {

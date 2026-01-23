@@ -33,6 +33,7 @@ public:
   ~MainWindow() override;
 
   bool selectTabByKey(const QString& key);
+  void setVisualizerTapTarget(const QString& targetObject, bool captureSink);
   PipeWireGraph* graph() const { return m_graph; }
 
 protected:

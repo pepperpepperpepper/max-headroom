@@ -138,6 +138,15 @@ MainWindow::MainWindow(LogStore* logs, QWidget* parent)
   });
 }
 
+void MainWindow::setVisualizerTapTarget(const QString& targetObject, bool captureSink)
+{
+  if (m_visualizerPage) {
+    m_visualizerPage->setTapTarget(targetObject, captureSink);
+  } else if (m_tap) {
+    m_tap->setTarget(captureSink, targetObject);
+  }
+}
+
 MainWindow::~MainWindow() = default;
 
 bool MainWindow::selectTabByKey(const QString& key)
