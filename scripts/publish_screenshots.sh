@@ -15,6 +15,24 @@ need wtf-upload
 OUT_DIR="${1:-$ROOT/screenshots}"
 mkdir -p "$OUT_DIR"
 
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+  if [[ -f "$HOME/.api-keys" ]]; then
+    # shellcheck disable=SC1090
+    source "$HOME/.api-keys" || true
+
+    # This dev environment keeps AWS creds under FDROID_* vars.
+    if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -n "${FDROID_AWS_ACCESS_KEY_ID:-}" ]]; then
+      export AWS_ACCESS_KEY_ID="$FDROID_AWS_ACCESS_KEY_ID"
+    fi
+    if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" && -n "${FDROID_AWS_SECRET_KEY:-}" ]]; then
+      export AWS_SECRET_ACCESS_KEY="$FDROID_AWS_SECRET_KEY"
+    fi
+    if [[ -z "${AWS_DEFAULT_REGION:-}" && -n "${AWS_REGION:-}" ]]; then
+      export AWS_DEFAULT_REGION="$AWS_REGION"
+    fi
+  fi
+fi
+
 echo "[1/4] Regenerate screenshots"
 "$ROOT/scripts/make_screenshots.sh" "$OUT_DIR"
 

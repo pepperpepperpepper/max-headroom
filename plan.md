@@ -37,7 +37,7 @@
 
 - Upload screenshots:
   - `wtf-upload screenshots/*.png`
-  - Requires AWS credentials (either `aws configure` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in env).
+  - Requires AWS credentials (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` in env). In this dev environment they live in `~/.api-keys`.
 
 - One-link gallery page (recommended):
   - `./scripts/publish_screenshots.sh`
