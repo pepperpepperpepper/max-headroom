@@ -1,6 +1,107 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.node_repl_history
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
 build/
-cmake-build-*/
-.cache/
-*.user
-*.autosave
-testdata/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PIPFILE.lock
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Build directories
+build/
+builddir/
+
+# Compiled Object files
+*.o
+*.obj
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Core dumps
+core
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Meson build files
+.ninja_deps
+.ninja_log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
+
+# Test results
+test_results*/
+
+# Other generated files
+FILES_TO_COPY.txt
+
+# Demo audio (kept local; used by screenshot scripts)
+testdata/audio/demo.opus
