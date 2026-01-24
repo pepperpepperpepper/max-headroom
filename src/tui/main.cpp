@@ -25,6 +25,7 @@
 #include "backend/PipeWireGraph.h"
 #include "backend/PipeWireThread.h"
 #include "backend/EqManager.h"
+#include "settings/SettingsKeys.h"
 
 namespace {
 
@@ -45,6 +46,7 @@ void printUsage()
       "\n"
       "Keys:\n"
       "  Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help\n"
+      "  [ / ]                Reorder outputs (Outputs)\n"
       "  Enter default/move/connect  c connect  d disconnect  e EQ toggle  p EQ preset\n"
       "  r rec  f file  q quit\n",
       HEADROOM_VERSION);
@@ -109,6 +111,128 @@ QString displayNameForNode(const PwNodeInfo& n)
     return n.name;
   }
   return QStringLiteral("(unnamed)");
+}
+
+QStringList defaultSinksOrder(const QList<PwNodeInfo>& sinks)
+{
+  QList<PwNodeInfo> sorted = sinks;
+  std::sort(sorted.begin(), sorted.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+    return displayNameForNode(a).toLower() < displayNameForNode(b).toLower();
+  });
+
+  QStringList order;
+  order.reserve(sorted.size());
+  for (const auto& n : sorted) {
+    if (!n.name.isEmpty()) {
+      order.push_back(n.name);
+    }
+  }
+  return order;
+}
+
+QList<PwNodeInfo> applySinksOrder(const QList<PwNodeInfo>& sinks, QSettings& s)
+{
+  const QStringList saved = s.value(SettingsKeys::sinksOrder()).toStringList();
+  if (saved.isEmpty()) {
+    QList<PwNodeInfo> sorted = sinks;
+    std::sort(sorted.begin(), sorted.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+      return displayNameForNode(a).toLower() < displayNameForNode(b).toLower();
+    });
+    return sorted;
+  }
+
+  QHash<QString, PwNodeInfo> byName;
+  byName.reserve(sinks.size());
+  for (const auto& node : sinks) {
+    byName.insert(node.name, node);
+  }
+
+  QStringList used;
+  QList<PwNodeInfo> ordered;
+  used.reserve(saved.size());
+  ordered.reserve(sinks.size());
+
+  for (const auto& name : saved) {
+    if (!byName.contains(name)) {
+      continue;
+    }
+    ordered.push_back(byName.value(name));
+    used.push_back(name);
+  }
+
+  QList<PwNodeInfo> remaining;
+  remaining.reserve(sinks.size());
+  for (const auto& node : sinks) {
+    if (!used.contains(node.name)) {
+      remaining.push_back(node);
+    }
+  }
+  std::sort(remaining.begin(), remaining.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+    return displayNameForNode(a).toLower() < displayNameForNode(b).toLower();
+  });
+  ordered.append(remaining);
+  return ordered;
+}
+
+bool moveSinkInOrder(const QList<PwNodeInfo>& sinks, const QString& sinkName, int delta, QString* statusOut = nullptr)
+{
+  if (sinkName.trimmed().isEmpty()) {
+    if (statusOut) {
+      *statusOut = QStringLiteral("No sink selected.");
+    }
+    return false;
+  }
+
+  QSettings s;
+  QStringList order = s.value(SettingsKeys::sinksOrder()).toStringList();
+
+  if (order.isEmpty()) {
+    order = defaultSinksOrder(sinks);
+  } else {
+    const QSet<QString> known = QSet<QString>(order.begin(), order.end());
+    QList<PwNodeInfo> remaining;
+    remaining.reserve(sinks.size());
+    for (const auto& n : sinks) {
+      if (!known.contains(n.name)) {
+        remaining.push_back(n);
+      }
+    }
+    std::sort(remaining.begin(), remaining.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+      return displayNameForNode(a).toLower() < displayNameForNode(b).toLower();
+    });
+    for (const auto& n : remaining) {
+      order.push_back(n.name);
+    }
+  }
+
+  int idx = order.indexOf(sinkName);
+  if (idx < 0) {
+    order.push_back(sinkName);
+    idx = order.size() - 1;
+  }
+
+  const int next = idx + delta;
+  if (next < 0 || next >= order.size()) {
+    if (statusOut) {
+      *statusOut = QStringLiteral("Already at %1.").arg(delta < 0 ? QStringLiteral("top") : QStringLiteral("bottom"));
+    }
+    return false;
+  }
+
+  order.swapItemsAt(idx, next);
+
+  const QStringList def = defaultSinksOrder(sinks);
+  const bool storeCustom = !def.isEmpty() && order != def;
+  if (storeCustom) {
+    s.setValue(SettingsKeys::sinksOrder(), order);
+  } else {
+    s.remove(SettingsKeys::sinksOrder());
+  }
+
+  if (statusOut) {
+    *statusOut = QStringLiteral("Output order updated.");
+  }
+  return true;
 }
 
 QString displayNameForPort(const PwPortInfo& p)
@@ -241,6 +365,7 @@ void drawHelpOverlay(Page page, int height, int width)
   lines << QStringLiteral("Navigation:");
   lines << QStringLiteral("  Up/Down (j/k)        Select item");
   lines << QStringLiteral("  Left/Right or -/+    Volume (Outputs/Inputs/Streams)");
+  lines << QStringLiteral("  [ / ]                Reorder outputs (Outputs)");
   lines << QStringLiteral("  m                    Mute/unmute");
   lines << QString();
   lines << QStringLiteral("Actions:");
@@ -1890,7 +2015,8 @@ int main(int argc, char** argv)
             int* selPtr = nullptr;
 
             if (page == Page::Outputs) {
-              devices = graph.audioSinks();
+              QSettings s;
+              devices = applySinksOrder(graph.audioSinks(), s);
               selPtr = &selectedSink;
             } else if (page == Page::Inputs) {
               devices = graph.audioSources();
@@ -1987,6 +2113,33 @@ int main(int argc, char** argv)
               break;
             case KEY_DOWN:
               sel = clampIndex(sel + 1, devices.size());
+              break;
+            case '[':
+            case ']':
+              if (page == Page::Outputs && !selectedNode.name.isEmpty()) {
+                const int delta = (ch == '[') ? -1 : 1;
+                const QString selectedName = selectedNode.name;
+                const QList<PwNodeInfo> sinksNow = graph.audioSinks();
+                QString statusMsg;
+                const bool ok = moveSinkInOrder(sinksNow, selectedName, delta, &statusMsg);
+                if (!statusMsg.isEmpty()) {
+                  globalStatus = statusMsg;
+                }
+                if (ok) {
+                  QSettings s;
+                  devices = applySinksOrder(sinksNow, s);
+                  int idx = 0;
+                  for (int i = 0; i < devices.size(); ++i) {
+                    if (devices[i].name == selectedName) {
+                      idx = i;
+                      break;
+                    }
+                  }
+                  sel = clampIndex(idx, devices.size());
+                } else {
+                  beep();
+                }
+              }
               break;
             case KEY_LEFT:
             case '-':
@@ -2435,7 +2588,8 @@ int main(int argc, char** argv)
 
         switch (page) {
         case Page::Outputs: {
-          const QList<PwNodeInfo> sinks = graph.audioSinks();
+          QSettings s;
+          const QList<PwNodeInfo> sinks = applySinksOrder(graph.audioSinks(), s);
           drawListPage("Output Devices", sinks, &graph, selectedSink, graph.defaultAudioSinkId(), height, width);
           break;
         }
@@ -2497,7 +2651,8 @@ int main(int argc, char** argv)
         QString statusLine;
         switch (page) {
         case Page::Outputs: {
-          const QList<PwNodeInfo> sinks = graph.audioSinks();
+          QSettings s;
+          const QList<PwNodeInfo> sinks = applySinksOrder(graph.audioSinks(), s);
           const PwNodeInfo n = sinks.value(clampIndex(selectedSink, sinks.size()));
           const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
           const bool isDef = graph.defaultAudioSinkId().has_value() && graph.defaultAudioSinkId().value() == n.id;

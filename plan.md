@@ -84,6 +84,7 @@
 ### 0.1 (CLI / SSH) — top priority
 
 - [x] `headroom-tui`: ncurses TUI shell with tabbed spaces + basic Outputs/Inputs volume/mute controls.
+- [x] `headroom-tui`: reorder Outputs list (persist sink order to settings; `[ / ]`).
 - [x] `headroom-tui`: Streams page (per-app playback/recording) + move streams between devices.
 - [x] `headroom-tui`: Patchbay page that can connect/disconnect ports.
 - [x] `headroom-tui`: EQ page (enable/disable per node + preset picker).
