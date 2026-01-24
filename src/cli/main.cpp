@@ -63,6 +63,10 @@ void printUsage(QTextStream& out)
          "  headroomctl nodes\n"
          "  headroomctl sinks\n"
          "  headroomctl sources\n"
+         "  headroomctl default-sink [get]\n"
+         "  headroomctl default-sink set <node-id|node-name>\n"
+         "  headroomctl default-source [get]\n"
+         "  headroomctl default-source set <node-id|node-name>\n"
          "  headroomctl ports\n"
          "  headroomctl links\n"
          "  headroomctl connect <out-port-id> <in-port-id> [--force]\n"
@@ -1454,6 +1458,110 @@ int main(int argc, char** argv)
           printNodes(out, graph.audioSources(), graph);
         }
         exitCode = 0;
+        break;
+      }
+      if (cmd == QStringLiteral("default-sink") || cmd == QStringLiteral("default-source")) {
+        const bool wantSink = (cmd == QStringLiteral("default-sink"));
+        const QString sub = (args.size() >= 3) ? args.at(2).trimmed().toLower() : QStringLiteral("get");
+
+        auto resolveDefaultNodeId = [&](const QString& idOrName) -> std::optional<uint32_t> {
+          const QString key = idOrName.trimmed();
+          bool ok = false;
+          const uint32_t id = key.toUInt(&ok);
+          if (ok) {
+            return id;
+          }
+
+          const QList<PwNodeInfo> candidates = wantSink ? graph.audioSinks() : graph.audioSources();
+          for (const auto& n : candidates) {
+            if (n.name == key || n.description == key || nodeLabel(n) == key) {
+              return n.id;
+            }
+          }
+          return std::nullopt;
+        };
+
+        auto printCurrent = [&]() {
+          const std::optional<uint32_t> idOpt = wantSink ? graph.defaultAudioSinkId() : graph.defaultAudioSourceId();
+          const PwNodeInfo n = idOpt.has_value() ? graph.nodeById(*idOpt).value_or(PwNodeInfo{}) : PwNodeInfo{};
+
+          if (jsonOutput) {
+            QJsonObject o;
+            o.insert(QStringLiteral("ok"), true);
+            if (wantSink) {
+              o.insert(QStringLiteral("defaultSinkId"), idOpt.has_value() ? QJsonValue(static_cast<qint64>(*idOpt)) : QJsonValue());
+              if (n.id != 0u) {
+                o.insert(QStringLiteral("defaultSink"), nodeToJson(n));
+              } else {
+                o.insert(QStringLiteral("defaultSink"), QJsonValue());
+              }
+            } else {
+              o.insert(QStringLiteral("defaultSourceId"), idOpt.has_value() ? QJsonValue(static_cast<qint64>(*idOpt)) : QJsonValue());
+              if (n.id != 0u) {
+                o.insert(QStringLiteral("defaultSource"), nodeToJson(n));
+              } else {
+                o.insert(QStringLiteral("defaultSource"), QJsonValue());
+              }
+            }
+            out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
+          } else {
+            if (!idOpt.has_value()) {
+              out << "none\n";
+            } else {
+              out << *idOpt << "\t" << nodeLabel(n) << "\n";
+            }
+          }
+        };
+
+        if (sub == QStringLiteral("get")) {
+          printCurrent();
+          exitCode = 0;
+          break;
+        }
+
+        if (sub == QStringLiteral("set")) {
+          if (args.size() < 4) {
+            err << "headroomctl: " << cmd << " set expects <node-id|node-name>\n";
+            exitCode = 2;
+            break;
+          }
+          if (!graph.hasDefaultDeviceSupport()) {
+            err << "headroomctl: default device controls unavailable (settings metadata missing)\n";
+            exitCode = 1;
+            break;
+          }
+
+          const auto idOpt = resolveDefaultNodeId(args.at(3));
+          if (!idOpt.has_value()) {
+            err << "headroomctl: unknown node (expected a sink/source id or name)\n";
+            exitCode = 2;
+            break;
+          }
+
+          bool ok = false;
+          QElapsedTimer t;
+          t.start();
+          while (t.elapsed() < 1500) {
+            ok = wantSink ? graph.setDefaultAudioSink(*idOpt) : graph.setDefaultAudioSource(*idOpt);
+            if (ok) {
+              break;
+            }
+            waitForGraph(60);
+          }
+          if (!ok) {
+            err << "headroomctl: failed to set default device\n";
+            exitCode = 1;
+            break;
+          }
+
+          waitForGraph(120);
+          printCurrent();
+          exitCode = 0;
+          break;
+        }
+
+        err << "headroomctl: " << cmd << " expects [get] or set <node-id|node-name>\n";
+        exitCode = 2;
         break;
       }
       if (cmd == QStringLiteral("ports")) {

@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QHash>
 #include <QMultiHash>
 #include <QPair>
@@ -43,8 +44,8 @@ void printUsage()
       "  headroom-tui --version\n"
       "\n"
       "Keys:\n"
-      "  Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute\n"
-      "  Enter move/connect  c connect  d disconnect  e EQ toggle  p EQ preset\n"
+      "  Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help\n"
+      "  Enter default/move/connect  c connect  d disconnect  e EQ toggle  p EQ preset\n"
       "  r rec  f file  q quit\n",
       HEADROOM_VERSION);
 }
@@ -206,12 +207,107 @@ void drawHeader(Page page, int width)
     }
   }
 
-  mvprintw(1,
-           0,
-           "Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  Enter move/connect  c connect  d disconnect  e EQ toggle  p EQ preset  r rec  f file  q quit");
+  mvprintw(1, 0, "Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help  q quit");
 }
 
-void drawListPage(const char* title, const QList<PwNodeInfo>& devices, PipeWireGraph* graph, int& selectedIdx, int height, int width)
+void drawStatusBar(const QString& text, int height, int width)
+{
+  if (height <= 0 || width <= 0) {
+    return;
+  }
+
+  const int y = height - 1;
+  attron(A_REVERSE);
+  mvhline(y, 0, ' ', width);
+  const QByteArray utf8 = text.toUtf8();
+  mvaddnstr(y, 0, utf8.constData(), std::max(0, width - 1));
+  attroff(A_REVERSE);
+}
+
+void drawHelpOverlay(Page page, int height, int width)
+{
+  if (height <= 0 || width <= 0) {
+    return;
+  }
+
+  QStringList lines;
+  lines << QStringLiteral("Close: Esc / q / ? / h");
+  lines << QString();
+  lines << QStringLiteral("Global:");
+  lines << QStringLiteral("  Tab / F1-F7 / 1-7    Switch pages");
+  lines << QStringLiteral("  ? or h               Toggle this help");
+  lines << QStringLiteral("  q                    Quit");
+  lines << QString();
+  lines << QStringLiteral("Navigation:");
+  lines << QStringLiteral("  Up/Down (j/k)        Select item");
+  lines << QStringLiteral("  Left/Right or -/+    Volume (Outputs/Inputs/Streams)");
+  lines << QStringLiteral("  m                    Mute/unmute");
+  lines << QString();
+  lines << QStringLiteral("Actions:");
+  lines << QStringLiteral("  Enter                Default device / Move / Connect / Preset / Rec (page-dependent)");
+  lines << QStringLiteral("  c                    Connect ports (Patchbay)");
+  lines << QStringLiteral("  d                    Delete selected link (Patchbay)");
+  lines << QStringLiteral("  e                    Toggle EQ (EQ)");
+  lines << QStringLiteral("  p                    Apply EQ preset (EQ)");
+  lines << QStringLiteral("  r                    Start/stop recording (Recording)");
+  lines << QStringLiteral("  f                    Recording file/template");
+  lines << QStringLiteral("  o                    Recording format (wav/flac)");
+  lines << QStringLiteral("  t                    Recording timer");
+  lines << QStringLiteral("  m                    Recording metadata (Recording)");
+
+  int maxLen = 0;
+  for (const auto& l : lines) {
+    maxLen = std::max(maxLen, static_cast<int>(l.size()));
+  }
+  const QString title = QStringLiteral("Help — %1").arg(QString::fromUtf8(pageName(page)));
+  maxLen = std::max(maxLen, static_cast<int>(title.size()));
+
+  const int boxW = std::min(width - 4, maxLen + 4);
+  const int boxH = std::min(height - 2, static_cast<int>(lines.size()) + 4);
+  if (boxW < 10 || boxH < 6) {
+    return;
+  }
+
+  const int y0 = std::max(0, (height - boxH) / 2);
+  const int x0 = std::max(0, (width - boxW) / 2);
+
+  for (int y = 0; y < boxH; ++y) {
+    mvhline(y0 + y, x0, ' ', boxW);
+  }
+
+  mvaddch(y0, x0, ACS_ULCORNER);
+  mvhline(y0, x0 + 1, ACS_HLINE, boxW - 2);
+  mvaddch(y0, x0 + boxW - 1, ACS_URCORNER);
+
+  for (int y = 1; y < boxH - 1; ++y) {
+    mvaddch(y0 + y, x0, ACS_VLINE);
+    mvaddch(y0 + y, x0 + boxW - 1, ACS_VLINE);
+  }
+
+  mvaddch(y0 + boxH - 1, x0, ACS_LLCORNER);
+  mvhline(y0 + boxH - 1, x0 + 1, ACS_HLINE, boxW - 2);
+  mvaddch(y0 + boxH - 1, x0 + boxW - 1, ACS_LRCORNER);
+
+  attron(A_BOLD);
+  const QByteArray titleUtf8 = title.toUtf8();
+  mvaddnstr(y0 + 1, x0 + 2, titleUtf8.constData(), std::max(0, boxW - 4));
+  attroff(A_BOLD);
+
+  const int innerW = std::max(0, boxW - 4);
+  const int maxLines = std::max(0, boxH - 4);
+  for (int i = 0; i < lines.size() && i < maxLines; ++i) {
+    const QByteArray utf8 = lines.at(i).toUtf8();
+    mvaddnstr(y0 + 2 + i, x0 + 2, utf8.constData(), innerW);
+  }
+}
+
+void drawListPage(const char* title,
+                  const QList<PwNodeInfo>& devices,
+                  PipeWireGraph* graph,
+                  int& selectedIdx,
+                  std::optional<uint32_t> defaultNodeId,
+                  int height,
+                  int width)
 {
   const int deviceCount = static_cast<int>(devices.size());
   mvprintw(3, 0, "%s (%d)", title, deviceCount);
@@ -245,6 +341,7 @@ void drawListPage(const char* title, const QList<PwNodeInfo>& devices, PipeWireG
 
     const int volPct = static_cast<int>(std::round(controls.volume * 100.0f));
     const char* muteStr = controls.mute ? "MUTED" : "     ";
+    const bool isDefault = defaultNodeId.has_value() && node.id == *defaultNodeId;
 
     const bool selected = (idx == selectedIdx);
     if (selected) {
@@ -252,9 +349,9 @@ void drawListPage(const char* title, const QList<PwNodeInfo>& devices, PipeWireG
     }
 
     const int y = listTop + row;
-    mvprintw(y, 0, "%c %4u  %-5s  %4d%%  ", selected ? '>' : ' ', node.id, muteStr, volPct);
+    mvprintw(y, 0, "%c %4u%c  %-5s  %4d%%  ", selected ? '>' : ' ', node.id, isDefault ? '*' : ' ', muteStr, volPct);
 
-    const int nameX = 0 + 1 + 5 + 2 + 5 + 2 + 5 + 2;
+    const int nameX = 0 + 2 + 4 + 1 + 2 + 5 + 2 + 5 + 2;
     const int barWidth = std::max(10, std::min(24, width - nameX - 40));
     const int barX = width - (barWidth + 2) - 1;
     const int nameWidth = std::max(0, barX - nameX - 2);
@@ -1705,6 +1802,8 @@ int main(int argc, char** argv)
         });
 
         bool running = true;
+        bool showHelp = false;
+        QString globalStatus;
         while (running) {
           QCoreApplication::processEvents();
 
@@ -1726,6 +1825,24 @@ int main(int argc, char** argv)
 
         const int ch = getch();
         if (ch != ERR) {
+          if (showHelp) {
+            switch (ch) {
+            case 27: // Esc
+            case '\n':
+            case KEY_ENTER:
+            case 'q':
+            case 'Q':
+            case '?':
+            case 'h':
+            case 'H':
+              showHelp = false;
+              break;
+            default:
+              break;
+            }
+          } else if (ch == '?' || ch == 'h' || ch == 'H') {
+            showHelp = true;
+          } else {
           switch (ch) {
           case 'q':
           case 'Q':
@@ -1797,6 +1914,73 @@ int main(int argc, char** argv)
             const uint32_t nodeId = devices.isEmpty() ? 0u : selectedNode.id;
             const PwNodeControls ctrls = graph.nodeControls(nodeId).value_or(PwNodeControls{});
 
+            auto trySetDefault = [&](bool sink) {
+              if (nodeId == 0u) {
+                beep();
+                return;
+              }
+              if (!graph.hasDefaultDeviceSupport()) {
+                globalStatus = QStringLiteral("Default device controls unavailable.");
+                beep();
+                return;
+              }
+
+              bool ok = false;
+              QElapsedTimer t;
+              t.start();
+              while (t.elapsed() < 1200) {
+                ok = sink ? graph.setDefaultAudioSink(nodeId) : graph.setDefaultAudioSource(nodeId);
+                if (ok) {
+                  break;
+                }
+                QCoreApplication::processEvents();
+                napms(40);
+              }
+
+              if (!ok) {
+                globalStatus = sink ? QStringLiteral("Failed to set default output.") : QStringLiteral("Failed to set default input.");
+                beep();
+                return;
+              }
+
+              globalStatus = sink ? QStringLiteral("Default output: %1").arg(displayNameForNode(selectedNode))
+                                  : QStringLiteral("Default input: %1").arg(displayNameForNode(selectedNode));
+            };
+
+            auto doMoveStream = [&]() {
+              if (page != Page::Streams || nodeId == 0u) {
+                beep();
+                return;
+              }
+
+              int height = 0;
+              int width = 0;
+              getmaxyx(stdscr, height, width);
+
+              const StreamRoute route = routeForStream(&graph, selectedNode);
+              const bool isPlayback = selectedNode.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"));
+
+              if (isPlayback) {
+                const QList<PwNodeInfo> sinks = graph.audioSinks();
+                const uint32_t sinkId = promptSelectNodeId("Move playback stream to output device", sinks, route.deviceId, height, width);
+                if (sinkId != 0 && sinkId != route.deviceId) {
+                  const bool ok = movePlaybackStreamToSink(&graph, nodeId, sinkId);
+                  if (!ok) {
+                    beep();
+                  }
+                }
+              } else {
+                const QList<PwNodeInfo> sources = graph.audioSources();
+                const uint32_t sourceId = promptSelectNodeId("Move capture stream to input device", sources, route.deviceId, height, width);
+                if (sourceId != 0 && sourceId != route.deviceId) {
+                  const bool ok = moveCaptureStreamToSource(&graph, nodeId, sourceId);
+                  if (!ok) {
+                    beep();
+                  }
+                }
+              }
+            };
+
             switch (ch) {
             case KEY_UP:
               sel = clampIndex(sel - 1, devices.size());
@@ -1825,35 +2009,20 @@ int main(int argc, char** argv)
               break;
             case '\n':
             case KEY_ENTER:
+              if (page == Page::Outputs) {
+                trySetDefault(true);
+              } else if (page == Page::Inputs) {
+                trySetDefault(false);
+              } else if (page == Page::Streams) {
+                doMoveStream();
+              } else {
+                beep();
+              }
+              break;
             case 't':
             case 'T':
-              if (page == Page::Streams && nodeId != 0u) {
-                int height = 0;
-                int width = 0;
-                getmaxyx(stdscr, height, width);
-
-                const StreamRoute route = routeForStream(&graph, selectedNode);
-                const bool isPlayback = selectedNode.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"));
-
-                if (isPlayback) {
-                  const QList<PwNodeInfo> sinks = graph.audioSinks();
-                  const uint32_t sinkId = promptSelectNodeId("Move playback stream to output device", sinks, route.deviceId, height, width);
-                  if (sinkId != 0 && sinkId != route.deviceId) {
-                    const bool ok = movePlaybackStreamToSink(&graph, nodeId, sinkId);
-                    if (!ok) {
-                      beep();
-                    }
-                  }
-                } else {
-                  const QList<PwNodeInfo> sources = graph.audioSources();
-                  const uint32_t sourceId = promptSelectNodeId("Move capture stream to input device", sources, route.deviceId, height, width);
-                  if (sourceId != 0 && sourceId != route.deviceId) {
-                    const bool ok = moveCaptureStreamToSource(&graph, nodeId, sourceId);
-                    if (!ok) {
-                      beep();
-                    }
-                  }
-                }
+              if (page == Page::Streams) {
+                doMoveStream();
               }
               break;
             default:
@@ -2255,6 +2424,7 @@ int main(int argc, char** argv)
             }
           }
         }
+        }
 
         int height = 0;
         int width = 0;
@@ -2266,12 +2436,12 @@ int main(int argc, char** argv)
         switch (page) {
         case Page::Outputs: {
           const QList<PwNodeInfo> sinks = graph.audioSinks();
-          drawListPage("Output Devices", sinks, &graph, selectedSink, height, width);
+          drawListPage("Output Devices", sinks, &graph, selectedSink, graph.defaultAudioSinkId(), height, width);
           break;
         }
         case Page::Inputs: {
           const QList<PwNodeInfo> sources = graph.audioSources();
-          drawListPage("Input Devices", sources, &graph, selectedSource, height, width);
+          drawListPage("Input Devices", sources, &graph, selectedSource, graph.defaultAudioSourceId(), height, width);
           break;
         }
         case Page::Streams:
@@ -2299,6 +2469,143 @@ int main(int argc, char** argv)
         case Page::Status:
           drawStatusPage(&graph, selectedStatus, height, width);
           break;
+        }
+
+        auto fmtVolPct = [](float v) -> QString {
+          const int pct = static_cast<int>(std::round(v * 100.0f));
+          return QStringLiteral("%1%").arg(pct);
+        };
+
+        auto fmtMute = [](bool mute) -> QString {
+          return mute ? QStringLiteral("muted") : QStringLiteral("unmuted");
+        };
+
+        auto nodeSummary = [&](const QString& kind, const PwNodeInfo& node, const PwNodeControls& c, bool isDefault) -> QString {
+          if (node.id == 0u) {
+            return QStringLiteral("%1: (none)").arg(kind);
+          }
+          const QString def = isDefault ? QStringLiteral(" (default)") : QString();
+          return QStringLiteral("%1 %2  %3  %4  %5%6")
+              .arg(kind)
+              .arg(node.id)
+              .arg(displayNameForNode(node))
+              .arg(fmtVolPct(c.volume))
+              .arg(fmtMute(c.mute))
+              .arg(def);
+        };
+
+        QString statusLine;
+        switch (page) {
+        case Page::Outputs: {
+          const QList<PwNodeInfo> sinks = graph.audioSinks();
+          const PwNodeInfo n = sinks.value(clampIndex(selectedSink, sinks.size()));
+          const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
+          const bool isDef = graph.defaultAudioSinkId().has_value() && graph.defaultAudioSinkId().value() == n.id;
+          statusLine = nodeSummary(QStringLiteral("OUT"), n, c, isDef);
+          break;
+        }
+        case Page::Inputs: {
+          const QList<PwNodeInfo> sources = graph.audioSources();
+          const PwNodeInfo n = sources.value(clampIndex(selectedSource, sources.size()));
+          const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
+          const bool isDef = graph.defaultAudioSourceId().has_value() && graph.defaultAudioSourceId().value() == n.id;
+          statusLine = nodeSummary(QStringLiteral("IN"), n, c, isDef);
+          break;
+        }
+        case Page::Streams: {
+          QList<PwNodeInfo> streams = graph.audioPlaybackStreams();
+          streams.append(graph.audioCaptureStreams());
+          std::sort(streams.begin(), streams.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+            if (a.mediaClass != b.mediaClass) {
+              return a.mediaClass < b.mediaClass;
+            }
+            return a.description < b.description;
+          });
+          const PwNodeInfo n = streams.value(clampIndex(selectedStream, streams.size()));
+          const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
+          const bool isPlayback = n.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"));
+          const StreamRoute route = (n.id != 0u) ? routeForStream(&graph, n) : StreamRoute{};
+          const QString routeText = route.deviceName.isEmpty()
+              ? QStringLiteral("")
+              : (route.isPlayback ? QStringLiteral(" -> %1").arg(route.deviceName) : QStringLiteral(" <- %1").arg(route.deviceName));
+          statusLine = nodeSummary(isPlayback ? QStringLiteral("PB") : QStringLiteral("REC"), n, c, false) + routeText;
+          break;
+        }
+        case Page::Patchbay: {
+          QList<PwLinkInfo> links = graph.links();
+          std::sort(links.begin(), links.end(), [](const PwLinkInfo& a, const PwLinkInfo& b) {
+            if (a.outputNodeId != b.outputNodeId) {
+              return a.outputNodeId < b.outputNodeId;
+            }
+            if (a.inputNodeId != b.inputNodeId) {
+              return a.inputNodeId < b.inputNodeId;
+            }
+            if (a.outputPortId != b.outputPortId) {
+              return a.outputPortId < b.outputPortId;
+            }
+            return a.inputPortId < b.inputPortId;
+          });
+          const PwLinkInfo l = links.value(clampIndex(selectedLink, links.size()));
+          if (l.id != 0u) {
+            statusLine = QStringLiteral("Link %1  out:%2/%3  in:%4/%5")
+                             .arg(l.id)
+                             .arg(l.outputNodeId)
+                             .arg(l.outputPortId)
+                             .arg(l.inputNodeId)
+                             .arg(l.inputPortId);
+          } else {
+            statusLine = QStringLiteral("Patchbay: (no links)");
+          }
+          if (!patchbayStatus.trimmed().isEmpty()) {
+            statusLine += QStringLiteral("  |  %1").arg(patchbayStatus);
+          }
+          break;
+        }
+        case Page::Eq: {
+          QList<PwNodeInfo> targets = graph.audioSinks();
+          targets.append(graph.audioSources());
+          const PwNodeInfo n = targets.value(clampIndex(selectedEqDevice, targets.size()));
+          const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
+          const EqPreset p = n.name.isEmpty() ? EqPreset{} : eq.presetForNodeName(n.name);
+          statusLine = nodeSummary(QStringLiteral("EQ"), n, c, false);
+          if (n.id != 0u) {
+            statusLine += QStringLiteral("  |  %1").arg(p.enabled ? QStringLiteral("ON") : QStringLiteral("OFF"));
+          }
+          if (!eqStatus.trimmed().isEmpty()) {
+            statusLine += QStringLiteral("  |  %1").arg(eqStatus);
+          }
+          break;
+        }
+        case Page::Recording: {
+          const QString state = recorder.isRecording() ? QStringLiteral("Recording") : QStringLiteral("Idle");
+          statusLine = QStringLiteral("%1  |  %2").arg(QStringLiteral("REC")).arg(state);
+          if (!recordingStatus.trimmed().isEmpty()) {
+            statusLine += QStringLiteral("  |  %1").arg(recordingStatus);
+          }
+          break;
+        }
+        case Page::Status: {
+          const auto snapOpt = graph.profilerSnapshot();
+          if (snapOpt.has_value() && snapOpt->seq > 0 && snapOpt->hasInfo) {
+            statusLine = QStringLiteral("CPU %1/%2/%3  XRuns %4")
+                             .arg(QString::number(snapOpt->cpuLoadFast * 100.0, 'f', 1) + "%")
+                             .arg(QString::number(snapOpt->cpuLoadMedium * 100.0, 'f', 1) + "%")
+                             .arg(QString::number(snapOpt->cpuLoadSlow * 100.0, 'f', 1) + "%")
+                             .arg(snapOpt->xrunCount);
+          } else {
+            statusLine = QStringLiteral("Status: (no profiler data yet)");
+          }
+          break;
+        }
+        }
+
+        if (!globalStatus.trimmed().isEmpty()) {
+          statusLine += QStringLiteral("  |  %1").arg(globalStatus);
+        }
+        drawStatusBar(statusLine, height, width);
+
+        if (showHelp) {
+          drawHelpOverlay(page, height, width);
         }
 
         refresh();

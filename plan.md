@@ -134,7 +134,7 @@
 
 ## Next Up (ordered, actionable)
 
-- [ ] TUI: add a key legend/help overlay (alsamixer-style) + status line (selected node, volume, mute).
-- [ ] TUI: add “default device” actions (set default sink/source) to match GUI behavior.
-- [ ] CLI: add explicit `default-sink` / `default-source` commands (wrap `PipeWireGraph::setDefaultAudioSink/Source`).
-- [ ] Release: commit + push current tray/patchbay/CLI fixes with `git-wizard`.
+- [x] TUI: add a key legend/help overlay (alsamixer-style) + status line (selected node, volume, mute).
+- [x] TUI: add “default device” actions (set default sink/source) to match GUI behavior.
+- [x] CLI: add explicit `default-sink` / `default-source` commands (wrap `PipeWireGraph::setDefaultAudioSink/Source`).
+- [ ] Release: commit + push current TUI/CLI changes with `git-wizard`.
