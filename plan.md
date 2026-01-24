@@ -45,6 +45,23 @@
   - `./scripts/publish_screenshots.sh`
   - Regenerates `screenshots/*.png`, uploads them, generates a temporary `index.html` pointing at the uploaded images, then uploads that HTML (does not modify the repo’s `screenshots/index.html`).
 
+## Tray menu demo (more comprehensive)
+
+- The tray menu depends on a real system-tray manager (XEmbed). Headroom’s normal `QT_QPA_PLATFORM=offscreen` screenshot flow can’t exercise it.
+- For screenshots in this container, we use `Xvfb + openbox + stalonetray + xdotool`:
+  - Single screenshot: `./scripts/make_tray_screenshot.sh screenshots/tray-menu.png`
+  - Full tray demo screenshots (automated), so it’s clear the tray UX works end-to-end:
+    - `./scripts/make_tray_demo_screenshots.sh screenshots`
+    - Tray icon visible in tray (baseline, before opening menu).
+    - Menu open (shows current volume %, mute state, default output label).
+    - Profiles submenu open (shows checkmark for active profile).
+    - Toggle mute (capture *after* toggle so checkbox state differs).
+    - Move volume slider (capture at e.g. ~30% and ~80% so it’s obvious it changed).
+    - “Open Mixer” from tray (capture Mixer window open/foreground).
+    - “Open Patchbay” from tray (capture Patchbay window open/foreground).
+    - Optional: “Quit” (verify process exits cleanly; not necessarily a screenshot).
+  - Ensure screenshots are actually unique (avoid the previous “every image is the same” issue): wait for UI updates between actions and always write distinct output filenames.
+
 ## Validation Notes (dev container)
 
 - This container typically has no system PipeWire running; use a private instance + set `XDG_RUNTIME_DIR`.
@@ -94,6 +111,7 @@
 - [x] Recording: format options (WAV/FLAC), levels/monitoring, timer, and file naming templates.
 - [x] Recording: per-recording metadata (sample rate/quantum, device/app list).
 - [x] Tray icon: quick mute/volume + open Mixer/Patchbay + profile switcher.
+- [x] Tray menu: add a comprehensive automated demo (icon visible + menu + Profiles submenu + mute toggle + slider move + open Mixer/Patchbay) and include those screenshots in the gallery upload.
 
 ### 0.4 (QjackCtl parity, longer-term)
 

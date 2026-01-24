@@ -151,7 +151,9 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 "$ROOT/build/headroom" --screenshot-window settings --screenshot "$OUT_DIR/settings.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --screenshot-window eq --screenshot "$OUT_DIR/eq.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --screenshot-window engine --screenshot "$OUT_DIR/engine.png" --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/scripts/make_tray_screenshot.sh" "$OUT_DIR/tray-menu.png" >/dev/null 2>&1 || true
+"$ROOT/scripts/make_tray_demo_screenshots.sh" "$OUT_DIR" >/dev/null 2>&1 \
+  || "$ROOT/scripts/make_tray_screenshot.sh" "$OUT_DIR/tray-menu.png" >/dev/null 2>&1 \
+  || true
 
 echo "[5/5] Done"
 echo "Wrote:"

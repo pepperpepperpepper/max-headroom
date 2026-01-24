@@ -266,9 +266,14 @@ void MainWindow::setupTray()
 
   m_tray = new QSystemTrayIcon(this);
   m_tray->setToolTip(tr("Headroom"));
-  m_tray->setIcon(QIcon::fromTheme(QStringLiteral("audio-volume-high")));
+  QIcon trayIcon = QIcon::fromTheme(QStringLiteral("audio-volume-high"));
+  if (trayIcon.isNull()) {
+    trayIcon = QIcon(QStringLiteral(":/icons/app.svg"));
+  }
+  m_tray->setIcon(trayIcon);
 
   m_trayMenu = new QMenu(this);
+  connect(m_trayMenu, &QMenu::aboutToShow, this, &MainWindow::refreshTrayUi);
 
   auto* openMixer = m_trayMenu->addAction(tr("Open Mixer"));
   connect(openMixer, &QAction::triggered, this, [this]() { showTabFromTray(QStringLiteral("mixer")); });
@@ -370,13 +375,13 @@ void MainWindow::refreshTrayUi()
   const bool hasMute = enabled && controls->hasMute;
   const bool hasVolume = enabled && controls->hasVolume;
 
-  const bool muted = hasMute ? controls->mute : false;
   const float vol = hasVolume ? controls->volume : 1.0f;
   const int percent = static_cast<int>(std::round(std::clamp(vol, 0.0f, 2.0f) * 100.0f));
+  const bool muted = hasMute ? controls->mute : (hasVolume ? (percent <= 0) : false);
 
   if (m_trayMuteAction) {
     QSignalBlocker b(m_trayMuteAction);
-    m_trayMuteAction->setEnabled(enabled && hasMute);
+    m_trayMuteAction->setEnabled(enabled && (hasMute || hasVolume));
     m_trayMuteAction->setChecked(muted);
   }
 
@@ -400,13 +405,16 @@ void MainWindow::refreshTrayUi()
   } else if (percent < 70) {
     icon = QIcon::fromTheme(QStringLiteral("audio-volume-medium"));
   }
+  if (icon.isNull()) {
+    icon = QIcon(QStringLiteral(":/icons/app.svg"));
+  }
   m_tray->setIcon(icon);
   m_tray->setToolTip(tr("Headroom — Output %1%").arg(std::clamp(percent, 0, 200)));
 }
 
 void MainWindow::showTabFromTray(const QString& key)
 {
-  show();
+  showNormal();
   raise();
   activateWindow();
   selectTabByKey(key);
@@ -422,8 +430,42 @@ void MainWindow::toggleTrayMute()
     return;
   }
 
+  const auto controls = m_graph->nodeControls(sinkId);
+  const bool hasMute = controls.has_value() && controls->hasMute;
+  const bool hasVolume = controls.has_value() && controls->hasVolume;
+
   const bool mute = m_trayMuteAction->isChecked();
-  m_graph->setNodeMute(sinkId, mute);
+  if (hasMute) {
+    m_graph->setNodeMute(sinkId, mute);
+    scheduleTrayRefresh();
+    return;
+  }
+
+  // Software mute fallback for nodes that don't expose a mute control:
+  // set volume to 0 and restore it when unmuting.
+  if (!hasVolume) {
+    scheduleTrayRefresh();
+    return;
+  }
+
+  if (mute) {
+    float restore = controls->volume;
+    if (restore <= 0.0001f) {
+      restore = 1.0f;
+    }
+    m_traySoftMuteNodeId = sinkId;
+    m_traySoftMuteRestoreVolume = restore;
+    m_graph->setNodeVolume(sinkId, 0.0f);
+  } else {
+    float restore = 1.0f;
+    if (m_traySoftMuteNodeId == sinkId && m_traySoftMuteRestoreVolume.has_value()) {
+      restore = *m_traySoftMuteRestoreVolume;
+    }
+    m_traySoftMuteNodeId = 0;
+    m_traySoftMuteRestoreVolume.reset();
+    m_graph->setNodeVolume(sinkId, restore);
+  }
+
   scheduleTrayRefresh();
 }
 

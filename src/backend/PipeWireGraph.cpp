@@ -898,7 +898,15 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
     return;
   }
 
+  // Nodes may expose multiple Props params, and some of them don't include
+  // volume/mute controls. Preserve any previously observed controls and only
+  // update the fields present in this param so we don't accidentally clear
+  // hasVolume/hasMute.
   PwNodeControls controls{};
+  {
+    std::lock_guard<std::mutex> lock(binding->graph->m_mutex);
+    controls = binding->graph->m_nodeControls.value(binding->nodeId, PwNodeControls{});
+  }
 
   if (const spa_pod_prop* prop = spa_pod_find_prop(param, nullptr, SPA_PROP_mute)) {
     const spa_pod* v = resolveChoice(&prop->value);
@@ -929,13 +937,19 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
     }
   }
 
-  if (!controls.hasVolume) {
-    if (const spa_pod_prop* prop = spa_pod_find_prop(param, nullptr, SPA_PROP_volume)) {
-      const spa_pod* v = resolveChoice(&prop->value);
-      float volume = 1.0f;
-      if (v && spa_pod_get_float(v, &volume) == 0) {
-        controls.hasVolume = true;
-        controls.volume = volume;
+  if (const spa_pod_prop* prop = spa_pod_find_prop(param, nullptr, SPA_PROP_volume)) {
+    // Only apply SPA_PROP_volume when this param does not include channelVolumes.
+    if (!spa_pod_find_prop(param, nullptr, SPA_PROP_channelVolumes)) {
+      // Some nodes (e.g. ALSA sinks) expose multiple Props params. If we already saw channelVolumes,
+      // ignore a scalar-only volume update so we don't accidentally clear channelVolumes and break
+      // future volume writes that rely on channelVolumes.
+      if (controls.channelVolumes.isEmpty()) {
+        const spa_pod* v = resolveChoice(&prop->value);
+        float volume = 1.0f;
+        if (v && spa_pod_get_float(v, &volume) == 0) {
+          controls.hasVolume = true;
+          controls.volume = volume;
+        }
       }
     }
   }

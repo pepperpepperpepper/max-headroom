@@ -3,6 +3,7 @@
 #include <QMainWindow>
 
 #include <cstdint>
+#include <optional>
 
 class QTabWidget;
 class MixerPage;
@@ -77,4 +78,7 @@ private:
   QSlider* m_trayVolumeSlider = nullptr;
   QLabel* m_trayVolumeLabel = nullptr;
   QTimer* m_trayRefreshTimer = nullptr;
+
+  uint32_t m_traySoftMuteNodeId = 0;
+  std::optional<float> m_traySoftMuteRestoreVolume;
 };

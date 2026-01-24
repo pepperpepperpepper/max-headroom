@@ -18,7 +18,13 @@ PipeWire-first mixer + patchbay + visualizers (waveform + spectrum + spectrogram
 
 ![Engine](screenshots/engine.png)
 
+![Tray icon](screenshots/tray-icon.png)
+
 ![Tray menu](screenshots/tray-menu.png)
+
+![Tray menu (muted)](screenshots/tray-menu-muted.png)
+
+More: `screenshots/index.html`
 
 Tip: regenerate these locally with `./scripts/make_screenshots.sh`.
 

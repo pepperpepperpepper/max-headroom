@@ -44,7 +44,14 @@ declare -a keys=(
   "settings.png"
   "eq.png"
   "engine.png"
+  "tray-icon.png"
   "tray-menu.png"
+  "tray-menu-profiles.png"
+  "tray-menu-muted.png"
+  "tray-menu-vol30.png"
+  "tray-menu-vol80.png"
+  "tray-open-mixer.png"
+  "tray-open-patchbay.png"
 )
 declare -a titles=(
   "Mixer"
@@ -54,7 +61,14 @@ declare -a titles=(
   "Settings"
   "Parametric EQ"
   "Engine"
+  "Tray icon"
   "Tray menu"
+  "Tray menu — Profiles"
+  "Tray menu — Muted"
+  "Tray menu — Volume 30%"
+  "Tray menu — Volume 80%"
+  "Tray menu — Open Mixer"
+  "Tray menu — Open Patchbay"
 )
 declare -a alts=(
   "Mixer tab screenshot"
@@ -64,7 +78,14 @@ declare -a alts=(
   "Settings dialog screenshot"
   "Parametric EQ dialog screenshot"
   "Engine dialog screenshot"
+  "Tray icon screenshot"
   "Tray menu screenshot"
+  "Tray menu profiles submenu screenshot"
+  "Tray menu muted screenshot"
+  "Tray menu volume at 30% screenshot"
+  "Tray menu volume at 80% screenshot"
+  "Tray menu open mixer screenshot"
+  "Tray menu open patchbay screenshot"
 )
 
 echo "[2/4] Upload screenshots"

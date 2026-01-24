@@ -38,15 +38,17 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[1/4] Build"
-cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$ROOT/build" -j >/dev/null
+if [[ ! -x "$ROOT/build/headroom" ]]; then
+  cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
+  cmake --build "$ROOT/build" -j >/dev/null
+fi
 
 echo "[2/4] Start private PipeWire"
 XDG_RUNTIME_DIR="$RUNTIME_DIR" nohup pipewire -c /usr/share/pipewire/pipewire.conf >"$PIPEWIRE_LOG_OUT" 2>"$PIPEWIRE_LOG_ERR" &
 PIPEWIRE_PID=$!
 
 for _ in $(seq 1 200); do
-  [[ -S "$RUNTIME_DIR/pipewire-0" ]] && break
+  [[ -S "$RUNTIME_DIR/pipewire-0" ]] && [[ -S "$RUNTIME_DIR/pipewire-0-manager" ]] && break
   sleep 0.05
 done
 
