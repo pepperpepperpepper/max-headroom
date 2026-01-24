@@ -69,6 +69,8 @@ qt_add_executable(headroom
   src/ui/MixerPage.h
   src/ui/PatchbayPage.cpp
   src/ui/PatchbayPage.h
+  src/ui/AppTheme.cpp
+  src/ui/AppTheme.h
   src/ui/PatchbayProfileHooksDialog.cpp
   src/ui/PatchbayProfileHooksDialog.h
   src/ui/EqDialog.cpp

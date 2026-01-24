@@ -89,6 +89,18 @@ SettingsDialog::SettingsDialog(PipeWireGraph* graph, QWidget* parent)
 
     v->addWidget(layout);
 
+    auto* appearance = new QGroupBox(tr("Appearance"), general);
+    auto* appearanceForm = new QFormLayout(appearance);
+
+    m_uiTheme = new QComboBox(appearance);
+    m_uiTheme->addItem(tr("System"), QStringLiteral("system"));
+    m_uiTheme->addItem(tr("Dark"), QStringLiteral("dark"));
+    m_uiTheme->addItem(tr("Light"), QStringLiteral("light"));
+    m_uiTheme->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    appearanceForm->addRow(tr("Theme:"), m_uiTheme);
+
+    v->addWidget(appearance);
+
     auto* autoConnect = new QGroupBox(tr("Patchbay Auto-Connect"), general);
     auto* autoV = new QVBoxLayout(autoConnect);
     auto* autoHelp = new QLabel(tr("Define regex-based rules to automatically connect ports when nodes appear."), autoConnect);
@@ -227,6 +239,13 @@ void SettingsDialog::loadGeneral()
   if (m_layoutEditMode) {
     m_layoutEditMode->setChecked(editMode);
   }
+
+  const QString rawTheme = s.value(SettingsKeys::uiTheme()).toString();
+  const QString theme = rawTheme.trimmed().isEmpty() ? QStringLiteral("system") : rawTheme.trimmed().toLower();
+  if (m_uiTheme) {
+    const int idx = findComboIndexByData<QString>(m_uiTheme, theme);
+    m_uiTheme->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
 }
 
 void SettingsDialog::loadVisualizer()
@@ -350,9 +369,21 @@ QStringList SettingsDialog::defaultSinksOrder() const
 void SettingsDialog::accept()
 {
   QSettings s;
+  const QString prevTheme = s.value(SettingsKeys::uiTheme()).toString().trimmed().toLower();
   const bool prevLayoutEdit = s.value(SettingsKeys::patchbayLayoutEditMode()).toBool();
   const QStringList previous = s.value(SettingsKeys::sinksOrder()).toStringList();
   const VisualizerSettings prevViz = VisualizerSettingsStore::load(s);
+
+  const QString nextTheme = m_uiTheme ? m_uiTheme->currentData().toString().trimmed().toLower() : QStringLiteral("system");
+  if (nextTheme.isEmpty() || nextTheme == QStringLiteral("system")) {
+    s.remove(SettingsKeys::uiTheme());
+  } else {
+    s.setValue(SettingsKeys::uiTheme(), nextTheme);
+  }
+  const QString storedTheme = s.value(SettingsKeys::uiTheme()).toString().trimmed().toLower();
+  if (storedTheme != prevTheme) {
+    emit uiThemeChanged();
+  }
 
   bool layoutChanged = false;
   const bool nextLayoutEdit = m_layoutEditMode && m_layoutEditMode->isChecked();

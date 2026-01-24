@@ -144,3 +144,4 @@
 - [x] Release: commit + push to GitHub (`git@github.com:pepperpepperpepper/max-headroom.git`).
 - [x] TUI: add a lightweight Engine page (systemd user-unit status + start/stop/restart).
 - [x] CLI: add sink ordering commands (for remote layout control).
+- [x] Settings: add theme picker (system/dark/light) and apply immediately.

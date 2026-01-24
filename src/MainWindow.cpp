@@ -32,6 +32,7 @@
 #include "backend/PipeWireThread.h"
 #include "settings/SettingsKeys.h"
 #include "settings/VisualizerSettings.h"
+#include "ui/AppTheme.h"
 #include "ui/SettingsDialog.h"
 #include "ui/EngineDialog.h"
 #include "ui/SessionsDialog.h"
@@ -176,6 +177,7 @@ bool MainWindow::selectTabByKey(const QString& key)
 void MainWindow::openSettings()
 {
   SettingsDialog dlg(m_graph, this);
+  connect(&dlg, &SettingsDialog::uiThemeChanged, this, []() { AppTheme::applyFromSettings(); });
   connect(&dlg, &SettingsDialog::sinksOrderChanged, this, [this]() {
     if (m_mixerPage) {
       m_mixerPage->refresh();

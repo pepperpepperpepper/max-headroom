@@ -17,6 +17,7 @@ public:
   explicit SettingsDialog(PipeWireGraph* graph, QWidget* parent = nullptr);
 
 signals:
+  void uiThemeChanged();
   void sinksOrderChanged();
   void layoutSettingsChanged();
   void visualizerSettingsChanged();
@@ -35,6 +36,7 @@ private:
   PipeWireGraph* m_graph = nullptr;
   QListWidget* m_sinksList = nullptr;
   QCheckBox* m_layoutEditMode = nullptr;
+  QComboBox* m_uiTheme = nullptr;
   QComboBox* m_vizRefresh = nullptr;
   QComboBox* m_vizFftSize = nullptr;
   QSlider* m_vizSmoothing = nullptr;

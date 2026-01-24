@@ -15,6 +15,7 @@
 #include "backend/PipeWireGraph.h"
 #include "backend/EqConfig.h"
 #include "backend/LogStore.h"
+#include "ui/AppTheme.h"
 #include "ui/EngineDialog.h"
 #include "ui/EqDialog.h"
 #include "ui/LogsDialog.h"
@@ -29,6 +30,7 @@ int main(int argc, char** argv)
   QApplication::setOrganizationName(QStringLiteral("maxheadroom"));
   QApplication::setApplicationVersion(QStringLiteral(HEADROOM_VERSION));
   QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
+  AppTheme::applyFromSettings();
 
   auto* logs = new LogStore(&app);
   logs->installQtMessageHandler();

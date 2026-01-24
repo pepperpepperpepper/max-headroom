@@ -8,6 +8,11 @@ inline QString sinksOrder()
   return QStringLiteral("patchbay/sinksOrder");
 }
 
+inline QString uiTheme()
+{
+  return QStringLiteral("ui/theme");
+}
+
 inline QString visualizerRefreshIntervalMs()
 {
   return QStringLiteral("visualizer/refreshIntervalMs");
