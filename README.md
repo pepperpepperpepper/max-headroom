@@ -66,6 +66,9 @@ Build flags:
 
 # Non-interactive CLI
 ./build/headroomctl sinks
+./build/headroomctl sinks order
+./build/headroomctl sinks order move <node-id|node-name> up|down|top|bottom
+./build/headroomctl sinks order reset
 ./build/headroomctl default-sink
 ./build/headroomctl default-sink set <node-id|node-name>
 ./build/headroomctl set-volume <node-id> 120%

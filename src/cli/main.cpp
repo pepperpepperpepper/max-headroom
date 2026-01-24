@@ -62,6 +62,9 @@ void printUsage(QTextStream& out)
          "  headroomctl --version\n"
          "  headroomctl nodes\n"
          "  headroomctl sinks\n"
+         "  headroomctl sinks order [get]\n"
+         "  headroomctl sinks order move <node-id|node-name> up|down|top|bottom\n"
+         "  headroomctl sinks order reset\n"
          "  headroomctl sources\n"
          "  headroomctl default-sink [get]\n"
          "  headroomctl default-sink set <node-id|node-name>\n"
@@ -1431,6 +1434,224 @@ int main(int argc, char** argv)
         break;
       }
       if (cmd == QStringLiteral("sinks")) {
+        const QString sub = (args.size() >= 3) ? args.at(2).trimmed().toLower() : QString{};
+        if (sub == QStringLiteral("order")) {
+          const QString action = (args.size() >= 4) ? args.at(3).trimmed().toLower() : QStringLiteral("get");
+          const QList<PwNodeInfo> sinks = graph.audioSinks();
+
+          auto defaultOrderNames = [&]() -> QStringList {
+            QList<PwNodeInfo> sorted = sinks;
+            std::sort(sorted.begin(), sorted.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+              return nodeLabel(a).toLower() < nodeLabel(b).toLower();
+            });
+
+            QStringList order;
+            order.reserve(sorted.size());
+            for (const auto& n : sorted) {
+              if (!n.name.isEmpty()) {
+                order.push_back(n.name);
+              }
+            }
+            return order;
+          };
+
+          auto currentOrderNames = [&](QSettings& s) -> QStringList {
+            const QStringList saved = s.value(SettingsKeys::sinksOrder()).toStringList();
+            if (saved.isEmpty()) {
+              return defaultOrderNames();
+            }
+
+            QStringList used;
+            used.reserve(saved.size());
+            for (const auto& name : saved) {
+              for (const auto& n : sinks) {
+                if (n.name == name) {
+                  used.push_back(name);
+                  break;
+                }
+              }
+            }
+
+            QList<PwNodeInfo> remaining;
+            remaining.reserve(sinks.size());
+            for (const auto& n : sinks) {
+              if (!used.contains(n.name)) {
+                remaining.push_back(n);
+              }
+            }
+            std::sort(remaining.begin(), remaining.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+              return nodeLabel(a).toLower() < nodeLabel(b).toLower();
+            });
+            for (const auto& n : remaining) {
+              used.push_back(n.name);
+            }
+            return used;
+          };
+
+          auto orderToJson = [&](const QStringList& order) -> QJsonArray {
+            QJsonArray arr;
+            for (const auto& name : order) {
+              for (const auto& n : sinks) {
+                if (n.name == name) {
+                  arr.append(nodeToJson(n));
+                  break;
+                }
+              }
+            }
+            return arr;
+          };
+
+          if (action == QStringLiteral("get") || action.isEmpty()) {
+            QSettings s;
+            const QStringList order = currentOrderNames(s);
+            if (jsonOutput) {
+              QJsonObject o;
+              o.insert(QStringLiteral("ok"), true);
+              o.insert(QStringLiteral("order"), orderToJson(order));
+              out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
+            } else {
+              int i = 1;
+              for (const auto& name : order) {
+                const auto it = std::find_if(sinks.begin(), sinks.end(), [&](const PwNodeInfo& n) { return n.name == name; });
+                if (it == sinks.end()) {
+                  continue;
+                }
+                out << i++ << "\t" << it->id << "\t" << nodeLabel(*it) << "\n";
+              }
+            }
+            exitCode = 0;
+            break;
+          }
+
+          if (action == QStringLiteral("reset")) {
+            QSettings s;
+            s.remove(SettingsKeys::sinksOrder());
+            const QStringList order = currentOrderNames(s);
+            if (jsonOutput) {
+              QJsonObject o;
+              o.insert(QStringLiteral("ok"), true);
+              o.insert(QStringLiteral("order"), orderToJson(order));
+              out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
+            } else {
+              out << "reset\n";
+            }
+            exitCode = 0;
+            break;
+          }
+
+          if (action == QStringLiteral("move")) {
+            if (args.size() < 6) {
+              err << "headroomctl: sinks order move expects <node-id|node-name> up|down|top|bottom\n";
+              exitCode = 2;
+              break;
+            }
+
+            auto resolveSinkName = [&](const QString& idOrName) -> QString {
+              const QString key = idOrName.trimmed();
+              bool ok = false;
+              const uint32_t id = key.toUInt(&ok);
+              if (ok) {
+                for (const auto& n : sinks) {
+                  if (n.id == id) {
+                    return n.name;
+                  }
+                }
+              }
+
+              for (const auto& n : sinks) {
+                if (n.name == key || nodeLabel(n) == key || n.description == key) {
+                  return n.name;
+                }
+              }
+              return {};
+            };
+
+            const QString sinkName = resolveSinkName(args.at(4));
+            const QString dir = args.at(5).trimmed().toLower();
+            if (sinkName.isEmpty()) {
+              err << "headroomctl: unknown sink\n";
+              exitCode = 2;
+              break;
+            }
+
+            QSettings s;
+            QStringList order = currentOrderNames(s);
+            if (!order.contains(sinkName)) {
+              order.push_back(sinkName);
+            }
+
+            const QStringList def = defaultOrderNames();
+            int idx = order.indexOf(sinkName);
+            bool moved = false;
+
+            if (dir == QStringLiteral("up")) {
+              if (idx > 0) {
+                order.swapItemsAt(idx, idx - 1);
+                moved = true;
+              }
+            } else if (dir == QStringLiteral("down")) {
+              if (idx >= 0 && idx + 1 < order.size()) {
+                order.swapItemsAt(idx, idx + 1);
+                moved = true;
+              }
+            } else if (dir == QStringLiteral("top")) {
+              if (idx > 0) {
+                order.removeAt(idx);
+                order.prepend(sinkName);
+                moved = true;
+              }
+            } else if (dir == QStringLiteral("bottom")) {
+              if (idx >= 0 && idx + 1 < order.size()) {
+                order.removeAt(idx);
+                order.push_back(sinkName);
+                moved = true;
+              }
+            } else {
+              err << "headroomctl: sinks order move expects up|down|top|bottom\n";
+              exitCode = 2;
+              break;
+            }
+
+            if (!moved) {
+              if (jsonOutput) {
+                QJsonObject o;
+                o.insert(QStringLiteral("ok"), false);
+                o.insert(QStringLiteral("moved"), false);
+                o.insert(QStringLiteral("order"), orderToJson(order));
+                out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
+              } else {
+                out << "no-op\n";
+              }
+              exitCode = 1;
+              break;
+            }
+
+            const bool storeCustom = !def.isEmpty() && order != def;
+            if (storeCustom) {
+              s.setValue(SettingsKeys::sinksOrder(), order);
+            } else {
+              s.remove(SettingsKeys::sinksOrder());
+            }
+
+            const QStringList next = currentOrderNames(s);
+            if (jsonOutput) {
+              QJsonObject o;
+              o.insert(QStringLiteral("ok"), true);
+              o.insert(QStringLiteral("moved"), true);
+              o.insert(QStringLiteral("order"), orderToJson(next));
+              out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
+            } else {
+              out << "moved\n";
+            }
+            exitCode = 0;
+            break;
+          }
+
+          err << "headroomctl: sinks order expects get|move|reset\n";
+          exitCode = 2;
+          break;
+        }
+
         if (jsonOutput) {
           QJsonArray arr;
           for (const auto& n : graph.audioSinks()) {
