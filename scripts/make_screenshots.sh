@@ -85,7 +85,7 @@ echo "[3/5] Seed demo graph (loopback device + null sink + test tones)"
 # Extra virtual sink so screenshots show sink ordering.
 XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cli -r pipewire-0-manager create-node spa-node-factory \
   factory.name=support.null-audio-sink node.name=Headroom-NullSink2 node.description=NullSink2 \
-  media.class=Audio/Sink object.linger=true >/dev/null
+  media.class=Audio/Sink object.linger=true audio.channels=2 'audio.position=[ FL FR ]' >/dev/null
 
 # Keep screenshots deterministic and avoid mutating the user's real config.
 export XDG_CONFIG_HOME="$RUNTIME_DIR/config"

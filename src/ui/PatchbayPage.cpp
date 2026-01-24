@@ -1555,7 +1555,20 @@ void PatchbayPage::rebuild()
       const bool locked = PatchbayPortConfigStore::isLocked(settings, n.name, pinfo.name);
       const auto customAlias = PatchbayPortConfigStore::customAlias(settings, n.name, pinfo.name);
       const QString basePw = pinfo.name.isEmpty() ? pinfo.alias : pinfo.name;
-      const QString displayBase = customAlias.value_or(basePw);
+
+      QString defaultDisplayBase = basePw;
+      const bool isHeadroomEqNode = n.name.startsWith(QStringLiteral("headroom.eq."));
+      if (isHeadroomEqNode) {
+        // EQ ports are named like "in_FL"/"out_FL" but also carry PW_KEY_AUDIO_CHANNEL.
+        // Prefer showing the channel label (FL/FR/...) or, failing that, strip the prefix.
+        if (!pinfo.audioChannel.isEmpty()) {
+          defaultDisplayBase = pinfo.audioChannel;
+        } else if (defaultDisplayBase.startsWith(QStringLiteral("in_")) || defaultDisplayBase.startsWith(QStringLiteral("out_"))) {
+          defaultDisplayBase = defaultDisplayBase.mid(3);
+        }
+      }
+
+      const QString displayBase = customAlias.value_or(defaultDisplayBase);
       auto* ellipse = new QGraphicsEllipseItem(dot, root);
       if (locked) {
         ellipse->setPen(QPen(QColor(250, 204, 21), 2));
@@ -1576,7 +1589,7 @@ void PatchbayPage::rebuild()
       const QString typeLabel = (kind == PortKind::Midi) ? QStringLiteral("MIDI") : ((kind == PortKind::Audio) ? QStringLiteral("Audio") : QStringLiteral("Other"));
       QStringList tipLines;
       tipLines << displayBase;
-      if (customAlias.has_value() && *customAlias != basePw) {
+      if (displayBase != basePw && !basePw.isEmpty()) {
         tipLines << QStringLiteral("port: %1").arg(basePw);
       }
       if (!pinfo.alias.isEmpty() && pinfo.alias != basePw) {
