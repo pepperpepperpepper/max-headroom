@@ -2710,12 +2710,26 @@ int main(int argc, char** argv)
           break;
         }
 
-        const bool ok = graph.setNodeVolume(*id, *volume);
+        // Give the PipeWire registry a moment to populate; for one-shot commands,
+        // graph discovery can race the initial setNodeVolume call.
+        bool ok = false;
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 1500) {
+          ok = graph.setNodeVolume(*id, *volume);
+          if (ok) {
+            break;
+          }
+          waitForGraph(60);
+        }
         if (!ok) {
           err << "headroomctl: failed to set volume\n";
           exitCode = 1;
           break;
         }
+
+        // Give PipeWire a short moment to flush the request before exiting.
+        waitForGraph(120);
 
         exitCode = 0;
         break;
@@ -2735,6 +2749,10 @@ int main(int argc, char** argv)
           break;
         }
 
+        // Same rationale as set-volume: make single-shot mute reliable even when
+        // the PipeWire graph is still being discovered.
+        waitForGraph(120);
+
         const QString mode = args.at(3).trimmed().toLower();
         const PwNodeControls c = graph.nodeControls(*id).value_or(PwNodeControls{});
 
@@ -2751,12 +2769,24 @@ int main(int argc, char** argv)
           break;
         }
 
-        const bool ok = graph.setNodeMute(*id, target);
+        bool ok = false;
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 1500) {
+          ok = graph.setNodeMute(*id, target);
+          if (ok) {
+            break;
+          }
+          waitForGraph(60);
+        }
         if (!ok) {
           err << "headroomctl: failed to set mute\n";
           exitCode = 1;
           break;
         }
+
+        // Give PipeWire a short moment to flush the request before exiting.
+        waitForGraph(120);
 
         exitCode = 0;
         break;

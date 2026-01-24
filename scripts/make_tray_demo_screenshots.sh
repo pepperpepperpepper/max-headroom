@@ -18,9 +18,11 @@ need openbox
 need stalonetray
 need xdotool
 need import
+need sha256sum
 need pipewire
 need pw-cli
 need pw-dump
+need pw-metadata
 need wireplumber
 need dbus-daemon
 need jq
@@ -110,13 +112,29 @@ if [[ -z "$SINK_ID" || "$SINK_ID" == "null" ]]; then
   exit 1
 fi
 
+# Ensure the tray controls the same sink we're manipulating in the demo.
+XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0 -n default 0 default.audio.sink "$SINK_ID" Spa:Id >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0 -n default 0 default.configured.audio.sink "$SINK_ID" Spa:Id >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0-manager -n default 0 default.audio.sink "$SINK_ID" Spa:Id >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0-manager -n default 0 default.configured.audio.sink "$SINK_ID" Spa:Id >/dev/null 2>&1 || true
+
 # Seed a profile so the tray menu's Profiles submenu is non-empty.
 XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" patchbay save testprofile >/dev/null 2>&1 || true
 XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" patchbay apply testprofile >/dev/null 2>&1 || true
 
-# Start from a known state.
-XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" set-volume "$SINK_ID" 100% >/dev/null 2>&1 || true
-XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" mute "$SINK_ID" off >/dev/null 2>&1 || true
+# Start from a known state (retry: headroomctl may race initial graph discovery).
+for _ in $(seq 1 40); do
+  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" set-volume "$SINK_ID" 100% >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+for _ in $(seq 1 40); do
+  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" mute "$SINK_ID" off >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
 
 echo "[3/4] Launch Xvfb + tray + Headroom; capture tray demo sequence"
 SCREEN="1100x700x24"
@@ -151,6 +169,28 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       # Give Qt time to paint (and avoid the old “every image is the same” issue).
       sleep 0.25
       import -window root "$path"
+    }
+
+    capture_root_until_hash_differs() {
+      local baseline_hash="$1"
+      local out_path="$2"
+      local tmp_path
+      tmp_path="$(mktemp -p "${OUT_DIR}" ".tmp-shot-XXXXXX.png")"
+
+      for _ in $(seq 1 30); do
+        capture_root "$tmp_path"
+        local h
+        h="$(sha256sum "$tmp_path" | awk "{print \$1}")"
+        if [[ "$h" != "$baseline_hash" ]]; then
+          mv -f "$tmp_path" "$out_path"
+          return 0
+        fi
+        sleep 0.25
+      done
+
+      echo "error: screenshot did not change after retries: $out_path" >&2
+      mv -f "$tmp_path" "$out_path"
+      return 1
     }
 
     tray_center_right_click() {
@@ -258,6 +298,35 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       return 0
     }
 
+    ctl_retry() {
+      local tries="$1"
+      shift
+      for _ in $(seq 1 "$tries"); do
+        if XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" "$@" >/dev/null 2>&1; then
+          return 0
+        fi
+        sleep 0.1
+      done
+      return 1
+    }
+
+    wait_sink_volume_pct() {
+      local expected="$1"
+      for _ in $(seq 1 60); do
+        local pct
+        pct="$(
+          XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks --json 2>/dev/null \
+            | jq -r --argjson id "$SINK_ID" '"'"'.[] | select(.id==$id) | (.controls.volume*100 | round)'"'"' \
+            | head -n 1
+        )"
+        if [[ -n "$pct" && "$pct" != "null" && "$pct" -eq "$expected" ]]; then
+          return 0
+        fi
+        sleep 0.1
+      done
+      return 1
+    }
+
     stalonetray --geometry 1x1+6+6 --decorations none --window-type dock --skip-taskbar --icon-size 24 --slot-size 24 --log-level err &
     TRAY_PID=$!
 
@@ -292,6 +361,8 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
     capture_root "$OUT_DIR/tray-menu.png"
     menu_close
 
+    BASELINE_HASH="$(sha256sum "$OUT_DIR/tray-menu.png" | awk "{print \$1}")"
+
     # Profiles submenu open (hover)
     echo "demo: capture profiles submenu"
     menu_open
@@ -317,17 +388,34 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
 
     # Slider positions: set volume externally, then capture open menu.
     echo "demo: capture volume 30%"
-    XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" set-volume "$SINK_ID" 30% >/dev/null 2>&1 || true
-    sleep 0.9
+    ctl_retry 40 set-volume "$SINK_ID" 30% || {
+      echo "error: failed to set sink $SINK_ID volume to 30%" >&2
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      exit 1
+    }
+    wait_sink_volume_pct 30 || {
+      echo "error: sink $SINK_ID did not report 30% within timeout" >&2
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      exit 1
+    }
     menu_open
-    capture_root "$OUT_DIR/tray-menu-vol30.png"
+    capture_root_until_hash_differs "$BASELINE_HASH" "$OUT_DIR/tray-menu-vol30.png"
     menu_close
+    VOL30_HASH="$(sha256sum "$OUT_DIR/tray-menu-vol30.png" | awk "{print \$1}")"
 
     echo "demo: capture volume 80%"
-    XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" set-volume "$SINK_ID" 80% >/dev/null 2>&1 || true
-    sleep 0.6
+    ctl_retry 40 set-volume "$SINK_ID" 80% || {
+      echo "error: failed to set sink $SINK_ID volume to 80%" >&2
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      exit 1
+    }
+    wait_sink_volume_pct 80 || {
+      echo "error: sink $SINK_ID did not report 80% within timeout" >&2
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      exit 1
+    }
     menu_open
-    capture_root "$OUT_DIR/tray-menu-vol80.png"
+    capture_root_until_hash_differs "$VOL30_HASH" "$OUT_DIR/tray-menu-vol80.png"
     menu_close
 
     # Open Mixer from tray

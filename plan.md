@@ -76,6 +76,8 @@
   - `headroom-tui` Recording page: start/stop worked and produced a valid WAV header; in this container’s private PipeWire graph, nodes may remain suspended without a session manager, so recorded data bytes can be 0.
   - Verified recording format/template/timer wiring via `headroomctl record start "/tmp/headroom-test-{datetime}-{target}.{ext}" --format flac --duration 1 ...` (status JSON includes format/duration/frames/peak/rms, quantumFrames, and a graphSnapshot of devices/streams at start; bytes may be 0 depending on graph).
   - Tray icon features require a desktop shell/system tray; in this container/offscreen runs, the tray may be unavailable.
+  - Tray demo screenshots: `./scripts/make_tray_demo_screenshots.sh` now enforces that volume changes are observable (waits for `headroomctl sinks --json` to report the new percent) and that all tray screenshots are unique (fixes the earlier “all images are the same” issue). `headroomctl set-volume`/`mute` also waits briefly after successful writes so one-shot commands reliably reach PipeWire before exit.
+  - Patchbay port ordering: ports are rendered in a stable, channel-aware order (e.g. `FL` before `FR`) to avoid confusing EQ node layouts like `in_playback_1`/`out_playback_1` appearing swapped between screenshots/runs.
 
 ## Task List
 
@@ -129,3 +131,10 @@
 - [x] Flatpak: finish manifest, permissions, portals, and CI build.
 - [x] Distro packaging: add metadata/starter packaging (Deb/Arch spec) + AppStream + icons.
 - [x] Release checklist: versioning, changelog, and screenshot refresh script integration.
+
+## Next Up (ordered, actionable)
+
+- [ ] TUI: add a key legend/help overlay (alsamixer-style) + status line (selected node, volume, mute).
+- [ ] TUI: add “default device” actions (set default sink/source) to match GUI behavior.
+- [ ] CLI: add explicit `default-sink` / `default-source` commands (wrap `PipeWireGraph::setDefaultAudioSink/Source`).
+- [ ] Release: commit + push current tray/patchbay/CLI fixes with `git-wizard`.

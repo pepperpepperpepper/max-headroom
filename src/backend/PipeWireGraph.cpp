@@ -940,15 +940,28 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   if (const spa_pod_prop* prop = spa_pod_find_prop(param, nullptr, SPA_PROP_volume)) {
     // Only apply SPA_PROP_volume when this param does not include channelVolumes.
     if (!spa_pod_find_prop(param, nullptr, SPA_PROP_channelVolumes)) {
-      // Some nodes (e.g. ALSA sinks) expose multiple Props params. If we already saw channelVolumes,
-      // ignore a scalar-only volume update so we don't accidentally clear channelVolumes and break
-      // future volume writes that rely on channelVolumes.
-      if (controls.channelVolumes.isEmpty()) {
-        const spa_pod* v = resolveChoice(&prop->value);
-        float volume = 1.0f;
-        if (v && spa_pod_get_float(v, &volume) == 0) {
-          controls.hasVolume = true;
-          controls.volume = volume;
+      const spa_pod* v = resolveChoice(&prop->value);
+      float volume = 1.0f;
+      if (v && spa_pod_get_float(v, &volume) == 0) {
+        controls.hasVolume = true;
+
+        // Some nodes emit scalar-only volume updates even when channelVolumes is supported.
+        // Preserve channelVolumes and rescale it to match the new scalar volume so:
+        // - UI reflects the updated volume
+        // - future volume writes can keep using channelVolumes safely
+        const float old = controls.volume;
+        controls.volume = volume;
+        if (!controls.channelVolumes.isEmpty()) {
+          if (old > 0.000001f) {
+            const float ratio = volume / old;
+            for (float& cv : controls.channelVolumes) {
+              cv = std::clamp(cv * ratio, 0.0f, 2.0f);
+            }
+          } else {
+            for (float& cv : controls.channelVolumes) {
+              cv = std::clamp(volume, 0.0f, 2.0f);
+            }
+          }
         }
       }
     }

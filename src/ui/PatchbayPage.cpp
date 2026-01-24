@@ -196,6 +196,47 @@ QString nodeLabelFor(const PwNodeInfo& n)
   return QStringLiteral("(unnamed)");
 }
 
+int audioChannelRank(const QString& ch)
+{
+  const QString c = ch.trimmed().toUpper();
+  if (c == QStringLiteral("FL")) {
+    return 0;
+  }
+  if (c == QStringLiteral("FR")) {
+    return 1;
+  }
+  if (c == QStringLiteral("FC")) {
+    return 2;
+  }
+  if (c == QStringLiteral("LFE")) {
+    return 3;
+  }
+  if (c == QStringLiteral("RL")) {
+    return 4;
+  }
+  if (c == QStringLiteral("RR")) {
+    return 5;
+  }
+  if (c == QStringLiteral("SL")) {
+    return 6;
+  }
+  if (c == QStringLiteral("SR")) {
+    return 7;
+  }
+  return 1'000'000;
+}
+
+QString portSortKey(const PwPortInfo& p)
+{
+  if (!p.audioChannel.isEmpty()) {
+    return p.audioChannel.trimmed().toLower();
+  }
+  if (!p.name.isEmpty()) {
+    return p.name.trimmed().toLower();
+  }
+  return p.alias.trimmed().toLower();
+}
+
 std::optional<uint32_t> linkIdByPorts(const QList<PwLinkInfo>& links, uint32_t outPortId, uint32_t inPortId)
 {
   for (const auto& l : links) {
@@ -1378,8 +1419,33 @@ void PatchbayPage::rebuild()
   int displayedNodes = 0;
 
   for (const auto& n : nodes) {
-    const QList<PwPortInfo> insAll = inPorts.value(n.id);
-    const QList<PwPortInfo> outsAll = outPorts.value(n.id);
+    QList<PwPortInfo> insAll = inPorts.value(n.id);
+    QList<PwPortInfo> outsAll = outPorts.value(n.id);
+
+    auto sortPorts = [&](QList<PwPortInfo>& list) {
+      std::sort(list.begin(), list.end(), [&](const PwPortInfo& a, const PwPortInfo& b) {
+        const PortKind ka = portKindFor(a, n);
+        const PortKind kb = portKindFor(b, n);
+        if (ka != kb) {
+          return static_cast<int>(ka) < static_cast<int>(kb);
+        }
+        if (ka == PortKind::Audio) {
+          const int ra = audioChannelRank(a.audioChannel);
+          const int rb = audioChannelRank(b.audioChannel);
+          if (ra != rb) {
+            return ra < rb;
+          }
+        }
+        const QString sa = portSortKey(a);
+        const QString sb = portSortKey(b);
+        if (sa != sb) {
+          return sa < sb;
+        }
+        return a.id < b.id;
+      });
+    };
+    sortPorts(insAll);
+    sortPorts(outsAll);
 
     const bool nodeTextMatches = matches(QStringLiteral("%1 %2 %3 %4 %5")
                                              .arg(n.mediaClass, n.appName, n.appProcessBinary, n.name, n.description));
