@@ -141,5 +141,5 @@
 - [x] Patchbay: make `headroom.eq.*` ports readable (avoid `in_playback_1`/`out_playback_1` label overflow).
 - [x] Screenshots: publish an uploaded gallery via `./scripts/publish_screenshots.sh` (latest: `https://tmp.uh-oh.wtf/2026/01/24/ca7c1a39-index.html`).
 - [x] Release: commit + push to GitHub (`git@github.com:pepperpepperpepper/max-headroom.git`).
-- [ ] TUI: add a lightweight Engine page (systemd user-unit status + start/stop/restart).
+- [x] TUI: add a lightweight Engine page (systemd user-unit status + start/stop/restart).
 - [x] CLI: add sink ordering commands (for remote layout control).

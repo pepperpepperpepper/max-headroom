@@ -62,7 +62,7 @@ Build flags:
 ```bash
 # TUI (ncurses)
 ./build/headroom-tui
-# keys: Tab/F1-F7 pages, ? help, Enter set default output/input, [ ] reorder outputs
+# keys: Tab/F1-F8 pages, ? help, Enter set default output/input, [ ] reorder outputs, S/T/R engine start/stop/restart
 
 # Non-interactive CLI
 ./build/headroomctl sinks

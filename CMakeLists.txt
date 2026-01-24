@@ -133,6 +133,8 @@ if (HEADROOM_BUILD_TUI)
     src/backend/PatchbayPortConfig.h
     src/backend/AudioRecorder.cpp
     src/backend/AudioRecorder.h
+    src/backend/EngineControl.cpp
+    src/backend/EngineControl.h
     src/backend/EqConfig.h
     src/backend/EqManager.cpp
     src/backend/EqManager.h

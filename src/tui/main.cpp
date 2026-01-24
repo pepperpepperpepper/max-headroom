@@ -21,6 +21,7 @@
 #include <curses.h>
 
 #include "backend/AudioRecorder.h"
+#include "backend/EngineControl.h"
 #include "backend/PatchbayPortConfig.h"
 #include "backend/PipeWireGraph.h"
 #include "backend/PipeWireThread.h"
@@ -45,8 +46,9 @@ void printUsage()
       "  headroom-tui --version\n"
       "\n"
       "Keys:\n"
-      "  Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help\n"
+      "  Tab/F1-F8 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help\n"
       "  [ / ]                Reorder outputs (Outputs)\n"
+      "  S/T/R                Engine start/stop/restart (Engine)\n"
       "  Enter default/move/connect  c connect  d disconnect  e EQ toggle  p EQ preset\n"
       "  r rec  f file  q quit\n",
       HEADROOM_VERSION);
@@ -60,6 +62,7 @@ enum class Page : int {
   Eq = 4,
   Recording = 5,
   Status = 6,
+  Engine = 7,
 };
 
 const char* pageName(Page p)
@@ -79,13 +82,15 @@ const char* pageName(Page p)
     return "Recording";
   case Page::Status:
     return "Status";
+  case Page::Engine:
+    return "Engine";
   }
   return "Unknown";
 }
 
 Page pageFromIndex(int idx)
 {
-  idx = (idx % 7 + 7) % 7;
+  idx = (idx % 8 + 8) % 8;
   return static_cast<Page>(idx);
 }
 
@@ -331,7 +336,7 @@ void drawHeader(Page page, int width)
     }
   }
 
-  mvprintw(1, 0, "Tab/F1-F7 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help  q quit");
+  mvprintw(1, 0, "Tab/F1-F8 pages  Up/Down select  Left/Right or +/- volume  m mute  ? help  q quit");
 }
 
 void drawStatusBar(const QString& text, int height, int width)
@@ -358,7 +363,7 @@ void drawHelpOverlay(Page page, int height, int width)
   lines << QStringLiteral("Close: Esc / q / ? / h");
   lines << QString();
   lines << QStringLiteral("Global:");
-  lines << QStringLiteral("  Tab / F1-F7 / 1-7    Switch pages");
+  lines << QStringLiteral("  Tab / F1-F8 / 1-8    Switch pages");
   lines << QStringLiteral("  ? or h               Toggle this help");
   lines << QStringLiteral("  q                    Quit");
   lines << QString();
@@ -379,6 +384,7 @@ void drawHelpOverlay(Page page, int height, int width)
   lines << QStringLiteral("  o                    Recording format (wav/flac)");
   lines << QStringLiteral("  t                    Recording timer");
   lines << QStringLiteral("  m                    Recording metadata (Recording)");
+  lines << QStringLiteral("  S/T/R                Start/stop/restart (Engine)");
 
   int maxLen = 0;
   for (const auto& l : lines) {
@@ -1862,6 +1868,72 @@ void drawStatusPage(PipeWireGraph* graph, int& selectedIdx, int height, int widt
   }
 }
 
+void drawEnginePage(const QList<SystemdUnitStatus>& units, int& selectedIdx, const QString& engineStatus, int height, int width)
+{
+  mvprintw(3, 0, "Engine control (systemd --user)");
+  mvprintw(4, 0, "Up/Down select  S start  T stop  R restart  g refresh");
+
+  if (!engineStatus.trimmed().isEmpty()) {
+    const QByteArray utf8 = engineStatus.toUtf8();
+    mvaddnstr(5, 0, utf8.constData(), std::max(0, width - 1));
+  }
+
+  const int listTop = 7;
+  const int listHeight = std::max(0, height - listTop - 4);
+  const int count = units.size();
+  if (count <= 0) {
+    mvprintw(listTop, 0, "(no units)");
+    return;
+  }
+
+  selectedIdx = clampIndex(selectedIdx, count);
+
+  int start = 0;
+  if (selectedIdx >= listHeight) {
+    start = selectedIdx - listHeight + 1;
+  }
+  start = std::clamp(start, 0, std::max(0, count - listHeight));
+
+  mvprintw(listTop - 1, 0, "  STATE          UNIT  DETAILS");
+
+  for (int row = 0; row < listHeight; ++row) {
+    const int idx = start + row;
+    if (idx >= count) {
+      break;
+    }
+
+    const auto& st = units[idx];
+    const bool selected = (idx == selectedIdx);
+    if (selected) {
+      attron(A_REVERSE);
+    }
+
+    const QString active = st.activeState.isEmpty() ? QStringLiteral("-") : st.activeState;
+    const QString sub = st.subState.isEmpty() ? QStringLiteral("-") : st.subState;
+    const QString details = st.error.isEmpty() ? st.description : QStringLiteral("ERR: %1").arg(st.error);
+    const QString line = QStringLiteral("%1/%2  %3  %4").arg(active, sub, st.unit, details);
+    const QByteArray utf8 = line.toUtf8();
+
+    const int y = listTop + row;
+    mvprintw(y, 0, "%c ", selected ? '>' : ' ');
+    mvaddnstr(y, 2, utf8.constData(), std::max(0, width - 3));
+
+    if (selected) {
+      attroff(A_REVERSE);
+    }
+  }
+
+  if (height >= 3) {
+    const SystemdUnitStatus st = units.value(selectedIdx);
+    const QString active = st.activeState.isEmpty() ? QStringLiteral("-") : st.activeState;
+    const QString sub = st.subState.isEmpty() ? QStringLiteral("-") : st.subState;
+    const QString load = st.loadState.isEmpty() ? QStringLiteral("-") : st.loadState;
+    const QString msg = QStringLiteral("Selected: %1  load:%2  active:%3/%4").arg(st.unit, load, active, sub);
+    const QByteArray utf8 = msg.toUtf8();
+    mvaddnstr(height - 2, 0, utf8.constData(), std::max(0, width - 1));
+  }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -1908,6 +1980,7 @@ int main(int argc, char** argv)
         int selectedEqDevice = 0;
         int selectedRecordingTarget = 0;
         int selectedStatus = 0;
+        int selectedEngine = 0;
 
         uint32_t patchbayOutNodeId = 0;
         uint32_t patchbayOutPortId = 0;
@@ -1929,6 +2002,11 @@ int main(int argc, char** argv)
         bool running = true;
         bool showHelp = false;
         QString globalStatus;
+        QList<SystemdUnitStatus> engineUnits;
+        QString engineStatus;
+        QElapsedTimer engineRefresh;
+        engineRefresh.start();
+        bool engineDirty = true;
         while (running) {
           QCoreApplication::processEvents();
 
@@ -1946,6 +2024,27 @@ int main(int argc, char** argv)
                                   .arg(bytes == 0 ? QStringLiteral("  (no audio received; is a session manager/driver running?)") : QString{});
             beep();
           }
+        }
+
+        if (page == Page::Engine && (engineDirty || engineRefresh.elapsed() > 1000)) {
+          engineUnits.clear();
+          engineStatus.clear();
+
+          const QStringList units = EngineControl::defaultUserUnits();
+          QString err;
+          if (!EngineControl::isSystemctlAvailable()) {
+            engineStatus = QStringLiteral("systemctl not found (Engine controls unavailable).");
+          } else if (!EngineControl::canTalkToUserSystemd(&err)) {
+            engineStatus = QStringLiteral("systemd --user unavailable: %1").arg(err);
+          }
+
+          for (const auto& unit : units) {
+            engineUnits.append(EngineControl::queryUserUnit(unit));
+          }
+          selectedEngine = clampIndex(selectedEngine, engineUnits.size());
+
+          engineDirty = false;
+          engineRefresh.restart();
         }
 
         const int ch = getch();
@@ -2005,6 +2104,10 @@ int main(int argc, char** argv)
           case KEY_F(7):
           case '7':
             page = Page::Status;
+            break;
+          case KEY_F(8):
+          case '8':
+            page = Page::Engine;
             break;
           default:
             break;
@@ -2444,6 +2547,100 @@ int main(int argc, char** argv)
               break;
             }
           }
+          else if (page == Page::Engine) {
+            const int n = engineUnits.size();
+            selectedEngine = clampIndex(selectedEngine, n);
+
+            auto selectedUnit = [&]() -> QString {
+              const SystemdUnitStatus st = engineUnits.value(selectedEngine);
+              return st.unit;
+            };
+
+            auto doStart = [&]() {
+              const QString unit = selectedUnit();
+              if (unit.isEmpty()) {
+                beep();
+                globalStatus = QStringLiteral("No unit selected.");
+                return;
+              }
+
+              QString err;
+              const bool ok = EngineControl::startUserUnit(unit, &err);
+              if (!ok) {
+                globalStatus = err.isEmpty() ? QStringLiteral("Start failed.") : QStringLiteral("Start failed: %1").arg(err);
+                beep();
+                return;
+              }
+              globalStatus = QStringLiteral("Started: %1").arg(unit);
+              engineDirty = true;
+            };
+
+            auto doStop = [&]() {
+              const QString unit = selectedUnit();
+              if (unit.isEmpty()) {
+                beep();
+                globalStatus = QStringLiteral("No unit selected.");
+                return;
+              }
+
+              QString err;
+              const bool ok = EngineControl::stopUserUnit(unit, &err);
+              if (!ok) {
+                globalStatus = err.isEmpty() ? QStringLiteral("Stop failed.") : QStringLiteral("Stop failed: %1").arg(err);
+                beep();
+                return;
+              }
+              globalStatus = QStringLiteral("Stopped: %1").arg(unit);
+              engineDirty = true;
+            };
+
+            auto doRestart = [&]() {
+              const QString unit = selectedUnit();
+              if (unit.isEmpty()) {
+                beep();
+                globalStatus = QStringLiteral("No unit selected.");
+                return;
+              }
+
+              QString err;
+              const bool ok = EngineControl::restartUserUnit(unit, &err);
+              if (!ok) {
+                globalStatus = err.isEmpty() ? QStringLiteral("Restart failed.") : QStringLiteral("Restart failed: %1").arg(err);
+                beep();
+                return;
+              }
+              globalStatus = QStringLiteral("Restarted: %1").arg(unit);
+              engineDirty = true;
+            };
+
+            switch (ch) {
+            case KEY_UP:
+              selectedEngine = clampIndex(selectedEngine - 1, n);
+              break;
+            case KEY_DOWN:
+              selectedEngine = clampIndex(selectedEngine + 1, n);
+              break;
+            case 'g':
+            case 'G':
+              engineDirty = true;
+              globalStatus = QStringLiteral("Engine: refresh requested.");
+              break;
+            case 's':
+            case 'S':
+              doStart();
+              break;
+            case 't':
+            case 'T':
+              doStop();
+              break;
+            case 'r':
+            case 'R':
+              doRestart();
+              break;
+            default:
+              break;
+            }
+          }
           else if (page == Page::Recording) {
             const QVector<RecordingTarget> targets = buildRecordingTargets(&graph);
             selectedRecordingTarget = clampIndex(selectedRecordingTarget, targets.size());
@@ -2623,6 +2820,9 @@ int main(int argc, char** argv)
         case Page::Status:
           drawStatusPage(&graph, selectedStatus, height, width);
           break;
+        case Page::Engine:
+          drawEnginePage(engineUnits, selectedEngine, engineStatus, height, width);
+          break;
         }
 
         auto fmtVolPct = [](float v) -> QString {
@@ -2736,6 +2936,22 @@ int main(int argc, char** argv)
           statusLine = QStringLiteral("%1  |  %2").arg(QStringLiteral("REC")).arg(state);
           if (!recordingStatus.trimmed().isEmpty()) {
             statusLine += QStringLiteral("  |  %1").arg(recordingStatus);
+          }
+          break;
+        }
+        case Page::Engine: {
+          const SystemdUnitStatus st = engineUnits.value(clampIndex(selectedEngine, engineUnits.size()));
+          if (!engineStatus.trimmed().isEmpty()) {
+            statusLine = QStringLiteral("Engine: %1").arg(engineStatus);
+          } else if (!st.unit.isEmpty()) {
+            const QString active = st.activeState.isEmpty() ? QStringLiteral("-") : st.activeState;
+            const QString sub = st.subState.isEmpty() ? QStringLiteral("-") : st.subState;
+            statusLine = QStringLiteral("Engine %1  %2/%3").arg(st.unit, active, sub);
+          } else {
+            statusLine = QStringLiteral("Engine: (no units)");
+          }
+          if (!st.error.trimmed().isEmpty()) {
+            statusLine += QStringLiteral("  |  %1").arg(st.error);
           }
           break;
         }
