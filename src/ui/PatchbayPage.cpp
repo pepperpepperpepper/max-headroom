@@ -1608,6 +1608,9 @@ void PatchbayPage::rebuild()
       }
 
       QString label = displayBase;
+      if (isHeadroomEqNode && !customAlias.has_value()) {
+        label = QStringLiteral("%1 %2").arg(isInput ? QStringLiteral("in") : QStringLiteral("out"), displayBase);
+      }
       if (!pinfo.audioChannel.isEmpty()) {
         const QString ch = pinfo.audioChannel.trimmed();
         const bool redundant = isRedundantChannelLabel(displayBase, ch) || isRedundantChannelLabel(basePw, ch) || isRedundantChannelLabel(pinfo.alias, ch);
