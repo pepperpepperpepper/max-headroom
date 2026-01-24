@@ -62,9 +62,12 @@ Build flags:
 ```bash
 # TUI (ncurses)
 ./build/headroom-tui
+# keys: Tab/F1-F7 pages, ? help, Enter set default output/input, [ ] reorder outputs
 
 # Non-interactive CLI
 ./build/headroomctl sinks
+./build/headroomctl default-sink
+./build/headroomctl default-sink set <node-id|node-name>
 ./build/headroomctl set-volume <node-id> 120%
 ./build/headroomctl mute <node-id> toggle
 
