@@ -179,6 +179,32 @@ QList<PwNodeInfo> applySinksOrder(const QList<PwNodeInfo>& sinks, QSettings& s)
   return ordered;
 }
 
+QList<PwNodeInfo> eqTargetsForGraph(PipeWireGraph* graph)
+{
+  QList<PwNodeInfo> out;
+  if (!graph) {
+    return out;
+  }
+
+  QSettings s;
+  QList<PwNodeInfo> sinks = applySinksOrder(graph->audioSinks(), s);
+  QList<PwNodeInfo> sources = graph->audioSources();
+  QList<PwNodeInfo> playback = graph->audioPlaybackStreams();
+  QList<PwNodeInfo> capture = graph->audioCaptureStreams();
+
+  auto sortByLabel = [](const PwNodeInfo& a, const PwNodeInfo& b) { return displayNameForNode(a).toLower() < displayNameForNode(b).toLower(); };
+  std::sort(sources.begin(), sources.end(), sortByLabel);
+  std::sort(playback.begin(), playback.end(), sortByLabel);
+  std::sort(capture.begin(), capture.end(), sortByLabel);
+
+  out.reserve(sinks.size() + sources.size() + playback.size() + capture.size());
+  out.append(sinks);
+  out.append(sources);
+  out.append(playback);
+  out.append(capture);
+  return out;
+}
+
 bool moveSinkInOrder(const QList<PwNodeInfo>& sinks, const QString& sinkName, int delta, QString* statusOut = nullptr)
 {
   if (sinkName.trimmed().isEmpty()) {
@@ -685,17 +711,31 @@ void drawEqPage(PipeWireGraph* graph, EqManager* eq, int& selectedIdx, const QSt
     return;
   }
 
-  QList<PwNodeInfo> targets = graph->audioSinks();
-  const int sinkCount = targets.size();
-  const QList<PwNodeInfo> sources = graph->audioSources();
-  targets.append(sources);
+  const QList<PwNodeInfo> targets = eqTargetsForGraph(graph);
+  int sinkCount = 0;
+  int sourceCount = 0;
+  int playbackCount = 0;
+  int captureCount = 0;
+  for (const auto& n : targets) {
+    if (n.mediaClass == QStringLiteral("Audio/Sink")) {
+      ++sinkCount;
+    } else if (n.mediaClass == QStringLiteral("Audio/Source")) {
+      ++sourceCount;
+    } else if (n.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"))) {
+      ++playbackCount;
+    } else if (n.mediaClass.startsWith(QStringLiteral("Stream/Input/Audio"))) {
+      ++captureCount;
+    }
+  }
 
   mvprintw(4,
            0,
-           "Devices: %d  (Outputs: %d, Inputs: %d)",
+           "Targets: %d  (Outputs: %d, Inputs: %d, App PB: %d, App REC: %d)",
            static_cast<int>(targets.size()),
            sinkCount,
-           static_cast<int>(sources.size()));
+           sourceCount,
+           playbackCount,
+           captureCount);
   mvprintw(5, 0, "Up/Down select  e toggle  p/Enter preset");
 
   if (!statusLine.isEmpty()) {
@@ -708,7 +748,7 @@ void drawEqPage(PipeWireGraph* graph, EqManager* eq, int& selectedIdx, const QSt
   const int listHeight = std::max(0, height - listTop - 4);
 
   if (count <= 0) {
-    mvprintw(listTop, 0, "(no devices)");
+    mvprintw(listTop, 0, "(no targets)");
     return;
   }
 
@@ -734,7 +774,16 @@ void drawEqPage(PipeWireGraph* graph, EqManager* eq, int& selectedIdx, const QSt
       attron(A_REVERSE);
     }
 
-    const char* kind = node.mediaClass == QStringLiteral("Audio/Sink") ? "OUT" : "IN ";
+    const char* kind = "UNK";
+    if (node.mediaClass == QStringLiteral("Audio/Sink")) {
+      kind = "OUT";
+    } else if (node.mediaClass == QStringLiteral("Audio/Source")) {
+      kind = "IN ";
+    } else if (node.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"))) {
+      kind = "PB ";
+    } else if (node.mediaClass.startsWith(QStringLiteral("Stream/Input/Audio"))) {
+      kind = "REC";
+    }
     const char* enabled = preset.enabled ? "ON " : "OFF";
 
     const QString name = displayNameForNode(node);
@@ -2491,8 +2540,7 @@ int main(int argc, char** argv)
             }
           }
           else if (page == Page::Eq) {
-            QList<PwNodeInfo> targets = graph.audioSinks();
-            targets.append(graph.audioSources());
+            QList<PwNodeInfo> targets = eqTargetsForGraph(&graph);
             const int count = targets.size();
 
             selectedEqDevice = clampIndex(selectedEqDevice, count);
@@ -2917,8 +2965,7 @@ int main(int argc, char** argv)
           break;
         }
         case Page::Eq: {
-          QList<PwNodeInfo> targets = graph.audioSinks();
-          targets.append(graph.audioSources());
+          QList<PwNodeInfo> targets = eqTargetsForGraph(&graph);
           const PwNodeInfo n = targets.value(clampIndex(selectedEqDevice, targets.size()));
           const PwNodeControls c = graph.nodeControls(n.id).value_or(PwNodeControls{});
           const EqPreset p = n.name.isEmpty() ? EqPreset{} : eq.presetForNodeName(n.name);

@@ -12,7 +12,38 @@
 namespace {
 bool isTargetClass(const QString& mediaClass)
 {
-  return mediaClass == QStringLiteral("Audio/Sink") || mediaClass == QStringLiteral("Audio/Source");
+  if (mediaClass == QStringLiteral("Audio/Sink") || mediaClass == QStringLiteral("Audio/Source")) {
+    return true;
+  }
+  // Treat per-app streams as EQ targets too (per-stream EQ).
+  if (mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"))) {
+    return true;
+  }
+  if (mediaClass.startsWith(QStringLiteral("Stream/Input/Audio"))) {
+    return true;
+  }
+  return false;
+}
+
+bool isSinkLike(const QString& mediaClass)
+{
+  if (mediaClass == QStringLiteral("Audio/Sink")) {
+    return true;
+  }
+  if (mediaClass == QStringLiteral("Audio/Source")) {
+    return false;
+  }
+  // PipeWire streams:
+  // - Stream/Output/Audio => source-like (outputs audio)
+  // - Stream/Input/Audio  => sink-like (consumes audio)
+  if (mediaClass.startsWith(QStringLiteral("Stream/Input/Audio"))) {
+    return true;
+  }
+  if (mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"))) {
+    return false;
+  }
+
+  return false;
 }
 
 QHash<QString, PwPortInfo> portsByChannel(const QList<PwPortInfo>& ports, uint32_t nodeId, const QString& direction)
@@ -138,7 +169,7 @@ QVector<QString> EqManager::targetChannels(const PwNodeInfo& node) const
   }
 
   const QList<PwPortInfo> ports = m_graph->ports();
-  const QString dir = node.mediaClass == QStringLiteral("Audio/Sink") ? QStringLiteral("in") : QStringLiteral("out");
+  const QString dir = isSinkLike(node.mediaClass) ? QStringLiteral("in") : QStringLiteral("out");
   for (const auto& p : ports) {
     if (p.nodeId != node.id || p.direction != dir) {
       continue;
@@ -299,7 +330,7 @@ void EqManager::reconcileOne(ActiveEq& eq)
   const auto ports = m_graph->ports();
   const auto links = m_graph->links();
 
-  const bool isSink = eq.targetMediaClass == QStringLiteral("Audio/Sink");
+  const bool isSink = isSinkLike(eq.targetMediaClass);
 
   const QString targetDir = isSink ? QStringLiteral("in") : QStringLiteral("out");
   const QHash<QString, PwPortInfo> targetPorts = portsByChannel(ports, targetId, targetDir);

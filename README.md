@@ -40,7 +40,7 @@ Tip: regenerate these locally with `./scripts/make_screenshots.sh`.
 - Engine control: start/stop/restart PipeWire + WirePlumber (systemd user units).
 - Sessions: named snapshots (links + defaults + EQ + layout) with one-click restore.
 - Settings: reorder output devices (affects Mixer + Patchbay).
-- Parametric EQ: per-device EQ for output *and* input devices (inserted as an in-graph PipeWire filter), with response curve preview, preset save/load, and AutoEQ/Squiglink import.
+- Parametric EQ: per-device *and per-app stream* EQ (inserted as an in-graph PipeWire filter), with response curve preview, preset save/load, and AutoEQ/Squiglink import.
 
 ## Build (local)
 

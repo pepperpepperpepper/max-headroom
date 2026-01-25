@@ -2891,6 +2891,8 @@ int main(int argc, char** argv)
         if (sub == QStringLiteral("list")) {
           QList<PwNodeInfo> targets = graph.audioSinks();
           targets.append(graph.audioSources());
+          targets.append(graph.audioPlaybackStreams());
+          targets.append(graph.audioCaptureStreams());
 
           if (jsonOutput) {
             QJsonArray arr;

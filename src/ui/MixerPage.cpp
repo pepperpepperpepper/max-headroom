@@ -340,6 +340,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
                        const PwNodeInfo& stream,
                        const PwNodeControls& controls,
                        const QList<PwNodeInfo>& devices,
+                       std::function<void()> onEq,
                        std::function<void()> onVisualize,
                        QList<QPointer<LevelMeterWidget>>& meters,
                        QWidget* parent)
@@ -392,6 +393,12 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
     vizBtn->setToolTip(QObject::tr("Show in Visualizer"));
     QObject::connect(vizBtn, &QPushButton::clicked, row, [onVisualize = std::move(onVisualize)]() { onVisualize(); });
     h->addWidget(vizBtn, 0);
+  }
+
+  if (onEq) {
+    auto* eqBtn = new QPushButton(QObject::tr("EQ…"), row);
+    QObject::connect(eqBtn, &QPushButton::clicked, row, [onEq = std::move(onEq)]() { onEq(); });
+    h->addWidget(eqBtn, 0);
   }
 
   auto* deviceBox = new QComboBox(row);
@@ -522,6 +529,7 @@ QGroupBox* makeStreamsSection(const QString& title,
                               PipeWireGraph* graph,
                               PipeWireThread* pw,
                               const QString& filter,
+                              std::function<void(const PwNodeInfo&)> onEqForStream,
                               std::function<void(const PwNodeInfo&)> onVisualizeForStream,
                               QList<QPointer<LevelMeterWidget>>& meters,
                               QWidget* parent)
@@ -542,13 +550,19 @@ QGroupBox* makeStreamsSection(const QString& title,
     const auto controlsOpt = graph ? graph->nodeControls(stream.id) : std::nullopt;
     const PwNodeControls controls = controlsOpt.value_or(PwNodeControls{});
 
+    std::function<void()> onEq;
+    if (onEqForStream) {
+      const PwNodeInfo streamCopy = stream;
+      onEq = [onEqForStream, streamCopy]() { onEqForStream(streamCopy); };
+    }
+
     std::function<void()> onVisualize;
     if (onVisualizeForStream) {
       const PwNodeInfo streamCopy = stream;
       onVisualize = [onVisualizeForStream, streamCopy]() { onVisualizeForStream(streamCopy); };
     }
 
-    v->addWidget(makeStreamRow(graph, pw, stream, controls, devices, std::move(onVisualize), meters, box));
+    v->addWidget(makeStreamRow(graph, pw, stream, controls, devices, std::move(onEq), std::move(onVisualize), meters, box));
     ++count;
   }
 
@@ -755,8 +769,24 @@ void MixerPage::rebuild()
     emit visualizerTapRequested(stream.name, false);
   };
 
-  layout->addWidget(makeStreamsSection(tr("Playback (apps)"), playback, outputs, m_graph, m_pw, filter, onVisualizeStream, meters, m_container));
-  layout->addWidget(makeStreamsSection(tr("Recording (apps)"), recording, inputs, m_graph, m_pw, filter, onVisualizeStream, meters, m_container));
+  auto onEq = [this](const PwNodeInfo& node) {
+    if (!m_eq) {
+      return;
+    }
+
+    const QString label = node.description.isEmpty() ? node.name : node.description;
+    const EqPreset initial = m_eq->presetForNodeName(node.name);
+
+    EqDialog dlg(label, initial, this);
+    if (dlg.exec() != QDialog::Accepted) {
+      return;
+    }
+
+    m_eq->setPresetForNodeName(node.name, dlg.preset());
+  };
+
+  layout->addWidget(makeStreamsSection(tr("Playback (apps)"), playback, outputs, m_graph, m_pw, filter, onEq, onVisualizeStream, meters, m_container));
+  layout->addWidget(makeStreamsSection(tr("Recording (apps)"), recording, inputs, m_graph, m_pw, filter, onEq, onVisualizeStream, meters, m_container));
 
   const uint32_t defaultSinkId = m_graph ? m_graph->defaultAudioSinkId().value_or(0) : 0;
   const uint32_t defaultSourceId = m_graph ? m_graph->defaultAudioSourceId().value_or(0) : 0;
@@ -817,21 +847,6 @@ void MixerPage::rebuild()
   repopulateDefaultBox(m_defaultOutput, m_setDefaultOutput, outputs, defaultSinkId);
   repopulateDefaultBox(m_defaultInput, m_setDefaultInput, inputs, defaultSourceId);
 
-  auto onEq = [this](const PwNodeInfo& node) {
-    if (!m_eq) {
-      return;
-    }
-
-    const QString label = node.description.isEmpty() ? node.name : node.description;
-    const EqPreset initial = m_eq->presetForNodeName(node.name);
-
-    EqDialog dlg(label, initial, this);
-    if (dlg.exec() != QDialog::Accepted) {
-      return;
-    }
-
-    m_eq->setPresetForNodeName(node.name, dlg.preset());
-  };
   layout->addWidget(makeSection(tr("Output Devices"), outputs, m_graph, m_pw, defaultSinkId, filter, onEq, onVisualizeNode, meters, m_container));
   layout->addWidget(makeSection(tr("Input Devices"), inputs, m_graph, m_pw, defaultSourceId, filter, onEq, onVisualizeNode, meters, m_container));
 
