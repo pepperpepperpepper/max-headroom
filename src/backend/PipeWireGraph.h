@@ -20,6 +20,8 @@ struct PwNodeInfo final {
   QString appName;
   QString appProcessBinary;
   QString objectSerial;
+  uint32_t audioChannels = 0;
+  QString audioPosition;
 };
 
 struct PwPortInfo final {

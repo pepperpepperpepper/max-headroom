@@ -5,6 +5,7 @@
 #include "backend/PipeWireThread.h"
 
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSettings>
 
 #include <algorithm>
@@ -43,10 +44,91 @@ bool isSinkLike(const QString& mediaClass)
     return false;
   }
 
-  return false;
+	return false;
 }
 
-QHash<QString, PwPortInfo> portsByChannel(const QList<PwPortInfo>& ports, uint32_t nodeId, const QString& direction)
+QString canonicalChannelLabelFromName(const QString& name)
+{
+  const QString n = name.trimmed().toUpper();
+  const QStringList parts = n.split(QRegularExpression(QStringLiteral("[^A-Z0-9]+")), Qt::SkipEmptyParts);
+  for (const auto& part : parts) {
+    if (part == QStringLiteral("FL") || part == QStringLiteral("FR") || part == QStringLiteral("FC") || part == QStringLiteral("LFE")
+        || part == QStringLiteral("RL") || part == QStringLiteral("RR") || part == QStringLiteral("SL") || part == QStringLiteral("SR")
+        || part == QStringLiteral("MONO")) {
+      return part;
+    }
+  }
+  return {};
+}
+
+QString portKeyForNode(const PwPortInfo& p)
+{
+  if (!p.audioChannel.isEmpty()) {
+    return p.audioChannel;
+  }
+  const QString canonical = canonicalChannelLabelFromName(p.name);
+  if (!canonical.isEmpty()) {
+    return canonical;
+  }
+  return p.name;
+}
+
+QString stripDirectionalPrefix(const QString& name)
+{
+  if (name.startsWith(QStringLiteral("in_"))) {
+    return name.mid(3);
+  }
+  if (name.startsWith(QStringLiteral("out_"))) {
+    return name.mid(4);
+  }
+  return name;
+}
+
+QVector<QString> parseAudioPosition(const QString& audioPosition)
+{
+  QVector<QString> out;
+  const QString n = audioPosition.trimmed().toUpper();
+  const QStringList parts = n.split(QRegularExpression(QStringLiteral("[^A-Z0-9]+")), Qt::SkipEmptyParts);
+  for (const auto& part : parts) {
+    const QString canonical = canonicalChannelLabelFromName(part);
+    if (!canonical.isEmpty()) {
+      out.push_back(canonical);
+    }
+  }
+  return out;
+}
+
+QVector<QString> normalizeAudioPosition(QVector<QString> position, uint32_t channels)
+{
+  if (channels == 0) {
+    return position;
+  }
+
+  const QVector<QString> fallback = {QStringLiteral("FL"),  QStringLiteral("FR"),  QStringLiteral("FC"),  QStringLiteral("LFE"),
+                                     QStringLiteral("RL"),  QStringLiteral("RR"),  QStringLiteral("SL"),  QStringLiteral("SR"),
+                                     QStringLiteral("MONO")};
+
+  const int target = static_cast<int>(channels);
+  if (position.size() > target) {
+    position.resize(target);
+    return position;
+  }
+
+  for (const auto& c : fallback) {
+    if (position.size() >= target) {
+      break;
+    }
+    if (!position.contains(c)) {
+      position.push_back(c);
+    }
+  }
+  while (position.size() < target) {
+    position.push_back(QStringLiteral("MONO"));
+  }
+  return position;
+}
+
+QHash<QString, PwPortInfo> portsByChannel(const QList<PwPortInfo>& ports, uint32_t nodeId, const QString& direction, bool stripInOutPrefix)
 {
   QHash<QString, PwPortInfo> out;
   for (const auto& p : ports) {
@@ -56,18 +138,106 @@ QHash<QString, PwPortInfo> portsByChannel(const QList<PwPortInfo>& ports, uint32
     if (p.direction != direction) {
       continue;
     }
-    const QString key = p.audioChannel.isEmpty() ? p.name : p.audioChannel;
+    QString key;
+    if (stripInOutPrefix && p.audioChannel.isEmpty()) {
+      key = stripDirectionalPrefix(p.name);
+      const QString canonical = canonicalChannelLabelFromName(key);
+      if (!canonical.isEmpty()) {
+        key = canonical;
+      }
+    } else {
+      key = portKeyForNode(p);
+    }
     out.insert(key, p);
   }
   return out;
 }
 
-QString pickChannelForPort(const PwPortInfo& p)
+QVector<ParametricEqFilter::PortSpec> targetPortSpecs(PipeWireGraph* graph, const PwNodeInfo& node)
 {
-  if (!p.audioChannel.isEmpty()) {
-    return p.audioChannel;
+  QVector<ParametricEqFilter::PortSpec> out;
+  if (!graph) {
+    return out;
   }
-  return p.name;
+
+  const QList<PwPortInfo> ports = graph->ports();
+  const QString dir = isSinkLike(node.mediaClass) ? QStringLiteral("in") : QStringLiteral("out");
+  QVector<PwPortInfo> matching;
+  matching.reserve(ports.size());
+
+  bool anyChannelProps = false;
+  for (const auto& p : ports) {
+    if (p.nodeId != node.id || p.direction != dir) {
+      continue;
+    }
+    matching.push_back(p);
+    if (!p.audioChannel.isEmpty()) {
+      anyChannelProps = true;
+    }
+  }
+  if (matching.isEmpty()) {
+    return out;
+  }
+
+  const QVector<QString> rawLayout = parseAudioPosition(node.audioPosition);
+
+  uint32_t chCount = 0;
+  bool chCountKnown = false;
+
+  if (node.audioChannels > 0) {
+    chCount = node.audioChannels;
+    chCountKnown = true;
+  }
+  if (chCount == 0) {
+    const auto controls = graph->nodeControls(node.id);
+    if (controls && !controls->channelVolumes.isEmpty()) {
+      chCount = static_cast<uint32_t>(controls->channelVolumes.size());
+      chCountKnown = true;
+    }
+  }
+  if (chCount == 0) {
+    if (!rawLayout.isEmpty()) {
+      chCount = static_cast<uint32_t>(rawLayout.size());
+      chCountKnown = true;
+    }
+  }
+  if (chCount == 0) {
+    chCount = matching.size() == 1 ? 2u : static_cast<uint32_t>(matching.size());
+  }
+
+  QVector<QString> layout = normalizeAudioPosition(rawLayout, chCount);
+  if (layout.isEmpty()) {
+    layout = normalizeAudioPosition({}, chCount);
+  }
+
+  if (!anyChannelProps && matching.size() == 1 && chCount > 1 && chCountKnown) {
+    ParametricEqFilter::PortSpec spec;
+    spec.key = portKeyForNode(matching[0]);
+    spec.channels = layout;
+    out.push_back(spec);
+    return out;
+  }
+
+  out.reserve(matching.size());
+  for (const auto& p : matching) {
+    ParametricEqFilter::PortSpec spec;
+    spec.key = portKeyForNode(p);
+
+    QString channel = p.audioChannel;
+    if (channel.isEmpty()) {
+      channel = canonicalChannelLabelFromName(p.name);
+    }
+    if (channel.isEmpty() && chCount == 1 && !layout.isEmpty()) {
+      channel = layout[0];
+    }
+    if (channel.isEmpty()) {
+      channel = spec.key;
+    }
+
+    spec.channels = {channel};
+    out.push_back(spec);
+  }
+  return out;
 }
 } // namespace
 
@@ -161,31 +331,6 @@ bool EqManager::linkExists(const QList<PwLinkInfo>& links, uint32_t outNode, uin
   return false;
 }
 
-QVector<QString> EqManager::targetChannels(const PwNodeInfo& node) const
-{
-  QVector<QString> channels;
-  if (!m_graph) {
-    return channels;
-  }
-
-  const QList<PwPortInfo> ports = m_graph->ports();
-  const QString dir = isSinkLike(node.mediaClass) ? QStringLiteral("in") : QStringLiteral("out");
-  for (const auto& p : ports) {
-    if (p.nodeId != node.id || p.direction != dir) {
-      continue;
-    }
-    const QString ch = pickChannelForPort(p);
-    if (!channels.contains(ch)) {
-      channels.push_back(ch);
-    }
-  }
-
-  if (channels.isEmpty()) {
-    channels = {QStringLiteral("FL"), QStringLiteral("FR")};
-  }
-  return channels;
-}
-
 void EqManager::reconcileAll()
 {
   m_reconcileScheduled = false;
@@ -227,13 +372,9 @@ void EqManager::reconcileAll()
     eq.targetId = node.id;
     eq.preset = preset;
 
-    QVector<QString> chNames = targetChannels(node);
-    QVector<ParametricEqFilter::Channel> channels;
-    channels.reserve(chNames.size());
-    for (const auto& ch : chNames) {
-      ParametricEqFilter::Channel c;
-      c.name = ch;
-      channels.push_back(c);
+    const QVector<ParametricEqFilter::PortSpec> ports = targetPortSpecs(m_graph, node);
+    if (ports.isEmpty()) {
+      continue;
     }
 
     QString filterNodeName = QStringLiteral("headroom.eq.%1").arg(node.name);
@@ -241,7 +382,7 @@ void EqManager::reconcileAll()
     filterNodeName.replace(' ', '_');
     QString filterDesc = tr("EQ — %1").arg(nodeLabel(node));
 
-    eq.filter = new ParametricEqFilter(m_pw, filterNodeName, filterDesc, channels, this);
+    eq.filter = new ParametricEqFilter(m_pw, filterNodeName, filterDesc, ports, this);
     eq.filterNodeId = eq.filter ? eq.filter->nodeId() : 0;
     if (eq.filter) {
       eq.filter->setPreset(preset);
@@ -333,9 +474,9 @@ void EqManager::reconcileOne(ActiveEq& eq)
   const bool isSink = isSinkLike(eq.targetMediaClass);
 
   const QString targetDir = isSink ? QStringLiteral("in") : QStringLiteral("out");
-  const QHash<QString, PwPortInfo> targetPorts = portsByChannel(ports, targetId, targetDir);
-  const QHash<QString, PwPortInfo> filterIn = portsByChannel(ports, filterId, QStringLiteral("in"));
-  const QHash<QString, PwPortInfo> filterOut = portsByChannel(ports, filterId, QStringLiteral("out"));
+  const QHash<QString, PwPortInfo> targetPorts = portsByChannel(ports, targetId, targetDir, false);
+  const QHash<QString, PwPortInfo> filterIn = portsByChannel(ports, filterId, QStringLiteral("in"), true);
+  const QHash<QString, PwPortInfo> filterOut = portsByChannel(ports, filterId, QStringLiteral("out"), true);
 
   if (targetPorts.isEmpty() || filterIn.isEmpty() || filterOut.isEmpty()) {
     return;
@@ -344,7 +485,7 @@ void EqManager::reconcileOne(ActiveEq& eq)
   if (isSink) {
     // Ensure EQ output -> sink.
     for (const auto& sinkPort : targetPorts) {
-      const QString ch = pickChannelForPort(sinkPort);
+      const QString ch = portKeyForNode(sinkPort);
       const PwPortInfo eqOutPort = filterOut.value(ch, filterOut.begin().value());
       if (!linkExists(links, filterId, eqOutPort.id, targetId, sinkPort.id)) {
         m_graph->createLink(filterId, eqOutPort.id, targetId, sinkPort.id);
@@ -387,7 +528,7 @@ void EqManager::reconcileOne(ActiveEq& eq)
   } else {
     // Ensure source -> EQ input.
     for (const auto& srcPort : targetPorts) {
-      const QString ch = pickChannelForPort(srcPort);
+      const QString ch = portKeyForNode(srcPort);
       const PwPortInfo eqInPort = filterIn.value(ch, filterIn.begin().value());
       if (!linkExists(links, targetId, srcPort.id, filterId, eqInPort.id)) {
         m_graph->createLink(targetId, srcPort.id, filterId, eqInPort.id);

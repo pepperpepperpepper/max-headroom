@@ -17,21 +17,21 @@ class ParametricEqFilter final : public QObject
   Q_OBJECT
 
 public:
-  struct Channel final {
-    QString name; // e.g. "FL"
-    uint32_t spaChannel = 0;
+  struct PortSpec final {
+    QString key;               // e.g. "playback_1" or "FL"
+    QVector<QString> channels; // e.g. {"FL","FR"} for an interleaved port, or {"FL"} for mono ports
   };
 
   explicit ParametricEqFilter(PipeWireThread* pw,
                               QString nodeName,
                               QString nodeDescription,
-                              QVector<Channel> channels,
+                              QVector<PortSpec> ports,
                               QObject* parent = nullptr);
   ~ParametricEqFilter() override;
 
   uint32_t nodeId() const { return m_nodeId.load(); }
   QString nodeName() const { return m_nodeName; }
-  QVector<Channel> channels() const { return m_channels; }
+  QVector<PortSpec> ports() const { return m_portSpecs; }
 
   EqPreset preset() const;
   void setPreset(const EqPreset& preset);
@@ -66,7 +66,7 @@ private:
   PipeWireThread* m_pw = nullptr;
   QString m_nodeName;
   QString m_nodeDescription;
-  QVector<Channel> m_channels;
+  QVector<PortSpec> m_portSpecs;
 
   pw_filter* m_filter = nullptr;
   spa_hook m_filterListener{};
@@ -74,8 +74,11 @@ private:
   struct PortPair final {
     void* inPort = nullptr;
     void* outPort = nullptr;
+    int channels = 0;
+    int channelBase = 0;
   };
   QVector<PortPair> m_ports;
+  int m_totalChannels = 0;
 
   mutable std::mutex m_mutex;
   EqPreset m_preset;
@@ -86,4 +89,3 @@ private:
 
   std::atomic<uint32_t> m_nodeId{0};
 };
-

@@ -736,6 +736,8 @@ void PipeWireGraph::onRegistryGlobal(void* data,
       node.appName = dictString(props, PW_KEY_APP_NAME);
       node.appProcessBinary = dictString(props, PW_KEY_APP_PROCESS_BINARY);
       node.objectSerial = dictString(props, PW_KEY_OBJECT_SERIAL);
+      node.audioChannels = dictU32(props, PW_KEY_AUDIO_CHANNELS).value_or(0);
+      node.audioPosition = dictString(props, "audio.position");
       if (node.description.isEmpty()) {
         node.description = dictString(props, PW_KEY_NODE_NICK);
       }

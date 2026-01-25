@@ -140,7 +140,8 @@
 - [x] CLI: add explicit `default-sink` / `default-source` commands (wrap `PipeWireGraph::setDefaultAudioSink/Source`).
 - [x] Patchbay: make `headroom.eq.*` ports readable (avoid `in_playback_1`/`out_playback_1` label overflow).
 - [x] Patchbay: make `headroom.eq.*` port labels unambiguous (prefix with `in`/`out` while still using the channel label).
-- [x] Screenshots: publish an uploaded gallery via `./scripts/publish_screenshots.sh` (latest: `https://tmp.uh-oh.wtf/2026/01/25/d6a730cf-index.html`).
+- [x] EQ: support interleaved multi-channel ports (e.g. sinks with only `playback_1`) so PipeWire can negotiate formats correctly.
+- [x] Screenshots: publish an uploaded gallery via `./scripts/publish_screenshots.sh` (latest: `https://tmp.uh-oh.wtf/2026/01/25/d803f947-index.html`).
 - [x] Release: commit + push to GitHub (`git@github.com:pepperpepperpepper/max-headroom.git`).
 - [x] TUI: add a lightweight Engine page (systemd user-unit status + start/stop/restart).
 - [x] CLI: add sink ordering commands (for remote layout control).

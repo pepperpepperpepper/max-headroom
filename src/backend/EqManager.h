@@ -60,7 +60,6 @@ private:
   void savePreset(const QString& nodeName, const EqPreset& preset);
   QString presetKey(const QString& nodeName) const;
 
-  QVector<QString> targetChannels(const PwNodeInfo& node) const;
   static QString nodeLabel(const PwNodeInfo& node);
   static QString linkKey(uint32_t outNode, uint32_t outPort, uint32_t inNode, uint32_t inPort);
   static bool linkExists(const QList<PwLinkInfo>& links, uint32_t outNode, uint32_t outPort, uint32_t inNode, uint32_t inPort);
