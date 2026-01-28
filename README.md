@@ -52,16 +52,21 @@ Tip: regenerate these locally with `./scripts/make_screenshots.sh`.
 
 Dependencies: Qt 6, CMake, pkg-config, PipeWire development headers. Optional: `ncursesw` (for `headroom-tui`).
 
+Note: some Qt 6 builds require Vulkan dev packages at configure-time. If you see a Vulkan error during `cmake -S`, install your distro's Vulkan loader/headers (e.g. `libvulkan-dev` on Debian/Ubuntu).
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build --parallel
 ./build/headroom
 ```
 
 Build flags:
 
+- Disable GUI (build `headroomctl` / `headroom-tui` only): `-DHEADROOM_BUILD_GUI=OFF`
 - Disable TUI: `-DHEADROOM_BUILD_TUI=OFF`
 - Disable CLI: `-DHEADROOM_BUILD_CLI=OFF`
+
+If your machine hangs/reboots during the compile, try limiting parallelism: `cmake --build build --parallel 1`
 
 ## CLI / SSH
 

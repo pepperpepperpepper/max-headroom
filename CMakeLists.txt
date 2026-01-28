@@ -14,131 +14,137 @@ set(CMAKE_AUTOUIC ON)
 
 option(HEADROOM_BUILD_TUI "Build headroom-tui (ncurses TUI)" ON)
 option(HEADROOM_BUILD_CLI "Build headroomctl (CLI)" ON)
+option(HEADROOM_BUILD_GUI "Build headroom (Qt GUI)" ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core)
+if (HEADROOM_BUILD_GUI)
+  find_package(Qt6 REQUIRED COMPONENTS Gui Widgets)
+endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
 pkg_check_modules(SPA REQUIRED IMPORTED_TARGET libspa-0.2)
 pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
 
-qt_add_executable(headroom
-	  src/app.qrc
-	  src/main.cpp
-	  src/MainWindow.cpp
-	  src/MainWindowTray.cpp
-	  src/MainWindowActions.cpp
-	  src/MainWindow.h
-	  src/backend/PipeWireThread.cpp
-	  src/backend/PipeWireThread.h
-  src/backend/PipeWireGraph.cpp
-  src/backend/PipeWireGraph.h
-  src/backend/PipeWireGraphRegistry.cpp
-  src/backend/PipeWireGraphOpsLinks.cpp
-  src/backend/PipeWireGraphOpsMetadata.cpp
-  src/backend/PipeWireGraphOpsMetaProfiler.cpp
-  src/backend/PipeWireGraphOpsNodeControls.cpp
-  src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
-  src/backend/PipeWireGraphInternal.h
-  src/backend/PatchbayProfiles.cpp
-  src/backend/PatchbayProfiles.h
-  src/backend/PatchbayProfileHooks.cpp
-  src/backend/PatchbayProfileHooks.h
-  src/backend/PatchbayAutoConnectRules.cpp
-  src/backend/PatchbayAutoConnectRules.h
-  src/backend/PatchbayPortConfig.cpp
-  src/backend/PatchbayPortConfig.h
-  src/backend/PatchbayAutoConnectController.cpp
-  src/backend/PatchbayAutoConnectController.h
-  src/backend/SessionSnapshots.cpp
-  src/backend/SessionSnapshotsApply.cpp
-  src/backend/SessionSnapshotsSerialize.cpp
-  src/backend/SessionSnapshots.h
-  src/backend/AudioTap.cpp
-  src/backend/AudioTap.h
-  src/backend/AudioLevelTap.cpp
-  src/backend/AudioLevelTap.h
-  src/backend/AudioRecorder.cpp
-  src/backend/AudioRecorder.h
-  src/backend/AlsaSeqBridge.cpp
-  src/backend/AlsaSeqBridge.h
-  src/backend/EngineControl.cpp
-  src/backend/EngineControl.h
-	  src/backend/LogStore.cpp
-	  src/backend/LogStore.h
-	  src/backend/EqConfig.h
-	  src/backend/EqManager.cpp
-	  src/backend/EqManagerPersist.cpp
-	  src/backend/EqManagerRealtime.cpp
-	  src/backend/EqManager.h
-	  src/backend/ParametricEqFilter.cpp
-	  src/backend/ParametricEqFilterDesign.cpp
-	  src/backend/ParametricEqFilterResponse.cpp
-	  src/backend/ParametricEqFilter.h
-  src/dsp/Fft.cpp
-  src/dsp/Fft.h
-  src/settings/SettingsKeys.h
-  src/settings/VisualizerSettings.h
-  src/ui/GraphPage.cpp
-  src/ui/GraphPage.h
-  src/ui/MixerPage.cpp
-  src/ui/MixerPage.h
-  src/ui/MixerRows.cpp
-  src/ui/MixerRouting.cpp
-  src/ui/PatchbayPage.cpp
-  src/ui/PatchbayPage.h
-  src/ui/PatchbaySceneBuilder.cpp
-  src/ui/PatchbaySceneController.cpp
-  src/ui/PatchbaySceneControllerContextMenu.cpp
-  src/ui/PatchbaySceneControllerUndo.cpp
-  src/ui/PatchbaySceneInternal.h
-  src/ui/AppTheme.cpp
-  src/ui/AppTheme.h
-  src/ui/PatchbayProfileHooksDialog.cpp
-  src/ui/PatchbayProfileHooksDialog.h
-  src/ui/EqDialog.cpp
-  src/ui/EqDialog.h
-  src/ui/EqResponseWidget.cpp
-  src/ui/EqResponseWidget.h
-  src/ui/SettingsDialog.cpp
-  src/ui/SettingsDialog.h
-  src/ui/EngineDialog.cpp
-  src/ui/EngineDialogClock.cpp
-  src/ui/EngineDialogSystemd.cpp
-  src/ui/EngineDialog.h
-  src/ui/AutoConnectRulesDialog.cpp
-  src/ui/AutoConnectRulesDialog.h
-	  src/ui/SessionsDialog.cpp
-	  src/ui/SessionsDialog.h
-	  src/ui/RecorderDialog.cpp
-	  src/ui/RecorderDialogRecording.cpp
-	  src/ui/RecorderDialogTargets.cpp
-	  src/ui/RecorderDialog.h
-	  src/ui/LogsDialog.cpp
-	  src/ui/LogsDialog.h
-	  src/ui/VisualizerPage.cpp
-  src/ui/VisualizerPage.h
-  src/ui/VisualizerWidget.cpp
-  src/ui/VisualizerWidget.h
-  src/ui/LevelMeterWidget.cpp
-  src/ui/LevelMeterWidget.h
-)
+if (HEADROOM_BUILD_GUI)
+  qt_add_executable(headroom
+  	  src/app.qrc
+  	  src/main.cpp
+  	  src/MainWindow.cpp
+  	  src/MainWindowTray.cpp
+  	  src/MainWindowActions.cpp
+  	  src/MainWindow.h
+  	  src/backend/PipeWireThread.cpp
+  	  src/backend/PipeWireThread.h
+    src/backend/PipeWireGraph.cpp
+    src/backend/PipeWireGraph.h
+    src/backend/PipeWireGraphRegistry.cpp
+    src/backend/PipeWireGraphOpsLinks.cpp
+    src/backend/PipeWireGraphOpsMetadata.cpp
+    src/backend/PipeWireGraphOpsMetaProfiler.cpp
+    src/backend/PipeWireGraphOpsNodeControls.cpp
+    src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
+    src/backend/PipeWireGraphInternal.h
+    src/backend/PatchbayProfiles.cpp
+    src/backend/PatchbayProfiles.h
+    src/backend/PatchbayProfileHooks.cpp
+    src/backend/PatchbayProfileHooks.h
+    src/backend/PatchbayAutoConnectRules.cpp
+    src/backend/PatchbayAutoConnectRules.h
+    src/backend/PatchbayPortConfig.cpp
+    src/backend/PatchbayPortConfig.h
+    src/backend/PatchbayAutoConnectController.cpp
+    src/backend/PatchbayAutoConnectController.h
+    src/backend/SessionSnapshots.cpp
+    src/backend/SessionSnapshotsApply.cpp
+    src/backend/SessionSnapshotsSerialize.cpp
+    src/backend/SessionSnapshots.h
+    src/backend/AudioTap.cpp
+    src/backend/AudioTap.h
+    src/backend/AudioLevelTap.cpp
+    src/backend/AudioLevelTap.h
+    src/backend/AudioRecorder.cpp
+    src/backend/AudioRecorder.h
+    src/backend/AlsaSeqBridge.cpp
+    src/backend/AlsaSeqBridge.h
+    src/backend/EngineControl.cpp
+    src/backend/EngineControl.h
+  	  src/backend/LogStore.cpp
+  	  src/backend/LogStore.h
+  	  src/backend/EqConfig.h
+  	  src/backend/EqManager.cpp
+  	  src/backend/EqManagerPersist.cpp
+  	  src/backend/EqManagerRealtime.cpp
+  	  src/backend/EqManager.h
+  	  src/backend/ParametricEqFilter.cpp
+  	  src/backend/ParametricEqFilterDesign.cpp
+  	  src/backend/ParametricEqFilterResponse.cpp
+  	  src/backend/ParametricEqFilter.h
+    src/dsp/Fft.cpp
+    src/dsp/Fft.h
+    src/settings/SettingsKeys.h
+    src/settings/VisualizerSettings.h
+    src/ui/GraphPage.cpp
+    src/ui/GraphPage.h
+    src/ui/MixerPage.cpp
+    src/ui/MixerPage.h
+    src/ui/MixerRows.cpp
+    src/ui/MixerRouting.cpp
+    src/ui/PatchbayPage.cpp
+    src/ui/PatchbayPage.h
+    src/ui/PatchbaySceneBuilder.cpp
+    src/ui/PatchbaySceneController.cpp
+    src/ui/PatchbaySceneControllerContextMenu.cpp
+    src/ui/PatchbaySceneControllerUndo.cpp
+    src/ui/PatchbaySceneInternal.h
+    src/ui/AppTheme.cpp
+    src/ui/AppTheme.h
+    src/ui/PatchbayProfileHooksDialog.cpp
+    src/ui/PatchbayProfileHooksDialog.h
+    src/ui/EqDialog.cpp
+    src/ui/EqDialog.h
+    src/ui/EqResponseWidget.cpp
+    src/ui/EqResponseWidget.h
+    src/ui/SettingsDialog.cpp
+    src/ui/SettingsDialog.h
+    src/ui/EngineDialog.cpp
+    src/ui/EngineDialogClock.cpp
+    src/ui/EngineDialogSystemd.cpp
+    src/ui/EngineDialog.h
+    src/ui/AutoConnectRulesDialog.cpp
+    src/ui/AutoConnectRulesDialog.h
+  	  src/ui/SessionsDialog.cpp
+  	  src/ui/SessionsDialog.h
+  	  src/ui/RecorderDialog.cpp
+  	  src/ui/RecorderDialogRecording.cpp
+  	  src/ui/RecorderDialogTargets.cpp
+  	  src/ui/RecorderDialog.h
+  	  src/ui/LogsDialog.cpp
+  	  src/ui/LogsDialog.h
+  	  src/ui/VisualizerPage.cpp
+    src/ui/VisualizerPage.h
+    src/ui/VisualizerWidget.cpp
+    src/ui/VisualizerWidget.h
+    src/ui/LevelMeterWidget.cpp
+    src/ui/LevelMeterWidget.h
+  )
 
-target_include_directories(headroom PRIVATE src)
+  target_include_directories(headroom PRIVATE src)
 
-target_link_libraries(headroom
-  PRIVATE
-    Qt6::Core
-    Qt6::Gui
-    Qt6::Widgets
-    PkgConfig::PIPEWIRE
-    PkgConfig::SPA
-    PkgConfig::SNDFILE
-)
+  target_link_libraries(headroom
+    PRIVATE
+      Qt6::Core
+      Qt6::Gui
+      Qt6::Widgets
+      PkgConfig::PIPEWIRE
+      PkgConfig::SPA
+      PkgConfig::SNDFILE
+  )
 
-target_compile_options(headroom PRIVATE -Wall -Wextra -Wpedantic)
-target_compile_definitions(headroom PRIVATE HEADROOM_VERSION="${PROJECT_VERSION}")
+  target_compile_options(headroom PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(headroom PRIVATE HEADROOM_VERSION="${PROJECT_VERSION}")
 
-install(TARGETS headroom RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(TARGETS headroom RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 if (HEADROOM_BUILD_TUI)
   set(CURSES_NEED_NCURSES TRUE)
@@ -283,6 +289,8 @@ if (HEADROOM_BUILD_CLI)
   install(TARGETS headroomctl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-install(FILES resources/com.maxheadroom.Headroom.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-install(FILES resources/com.maxheadroom.Headroom.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
-install(FILES resources/icons/com.maxheadroom.Headroom.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+if (HEADROOM_BUILD_GUI)
+  install(FILES resources/com.maxheadroom.Headroom.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES resources/com.maxheadroom.Headroom.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+  install(FILES resources/icons/com.maxheadroom.Headroom.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+endif()

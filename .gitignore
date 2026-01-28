@@ -42,6 +42,8 @@ venv.bak/
 # Build directories
 build/
 builddir/
+build_*/
+build-*/
 
 # Compiled Object files
 *.o
