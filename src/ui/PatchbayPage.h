@@ -10,6 +10,7 @@ class QGraphicsView;
 class QGraphicsEllipseItem;
 class QGraphicsItem;
 class QGraphicsPathItem;
+class QGraphicsSceneContextMenuEvent;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
@@ -40,6 +41,7 @@ private:
   void saveProfile();
   void deleteSelectedProfile();
   void editProfileHooks();
+  bool handleSceneContextMenu(QGraphicsSceneContextMenuEvent* e);
   void clearSelection();
   void clearLinkSelection();
   void updatePortDotStyle(QGraphicsEllipseItem* dot);

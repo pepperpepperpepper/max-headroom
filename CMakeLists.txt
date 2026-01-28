@@ -22,14 +22,23 @@ pkg_check_modules(SPA REQUIRED IMPORTED_TARGET libspa-0.2)
 pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
 
 qt_add_executable(headroom
-  src/app.qrc
-  src/main.cpp
-  src/MainWindow.cpp
-  src/MainWindow.h
-  src/backend/PipeWireThread.cpp
-  src/backend/PipeWireThread.h
+	  src/app.qrc
+	  src/main.cpp
+	  src/MainWindow.cpp
+	  src/MainWindowTray.cpp
+	  src/MainWindowActions.cpp
+	  src/MainWindow.h
+	  src/backend/PipeWireThread.cpp
+	  src/backend/PipeWireThread.h
   src/backend/PipeWireGraph.cpp
   src/backend/PipeWireGraph.h
+  src/backend/PipeWireGraphRegistry.cpp
+  src/backend/PipeWireGraphOpsLinks.cpp
+  src/backend/PipeWireGraphOpsMetadata.cpp
+  src/backend/PipeWireGraphOpsMetaProfiler.cpp
+  src/backend/PipeWireGraphOpsNodeControls.cpp
+  src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
+  src/backend/PipeWireGraphInternal.h
   src/backend/PatchbayProfiles.cpp
   src/backend/PatchbayProfiles.h
   src/backend/PatchbayProfileHooks.cpp
@@ -41,6 +50,8 @@ qt_add_executable(headroom
   src/backend/PatchbayAutoConnectController.cpp
   src/backend/PatchbayAutoConnectController.h
   src/backend/SessionSnapshots.cpp
+  src/backend/SessionSnapshotsApply.cpp
+  src/backend/SessionSnapshotsSerialize.cpp
   src/backend/SessionSnapshots.h
   src/backend/AudioTap.cpp
   src/backend/AudioTap.h
@@ -52,13 +63,17 @@ qt_add_executable(headroom
   src/backend/AlsaSeqBridge.h
   src/backend/EngineControl.cpp
   src/backend/EngineControl.h
-  src/backend/LogStore.cpp
-  src/backend/LogStore.h
-  src/backend/EqConfig.h
-  src/backend/EqManager.cpp
-  src/backend/EqManager.h
-  src/backend/ParametricEqFilter.cpp
-  src/backend/ParametricEqFilter.h
+	  src/backend/LogStore.cpp
+	  src/backend/LogStore.h
+	  src/backend/EqConfig.h
+	  src/backend/EqManager.cpp
+	  src/backend/EqManagerPersist.cpp
+	  src/backend/EqManagerRealtime.cpp
+	  src/backend/EqManager.h
+	  src/backend/ParametricEqFilter.cpp
+	  src/backend/ParametricEqFilterDesign.cpp
+	  src/backend/ParametricEqFilterResponse.cpp
+	  src/backend/ParametricEqFilter.h
   src/dsp/Fft.cpp
   src/dsp/Fft.h
   src/settings/SettingsKeys.h
@@ -67,8 +82,15 @@ qt_add_executable(headroom
   src/ui/GraphPage.h
   src/ui/MixerPage.cpp
   src/ui/MixerPage.h
+  src/ui/MixerRows.cpp
+  src/ui/MixerRouting.cpp
   src/ui/PatchbayPage.cpp
   src/ui/PatchbayPage.h
+  src/ui/PatchbaySceneBuilder.cpp
+  src/ui/PatchbaySceneController.cpp
+  src/ui/PatchbaySceneControllerContextMenu.cpp
+  src/ui/PatchbaySceneControllerUndo.cpp
+  src/ui/PatchbaySceneInternal.h
   src/ui/AppTheme.cpp
   src/ui/AppTheme.h
   src/ui/PatchbayProfileHooksDialog.cpp
@@ -80,16 +102,20 @@ qt_add_executable(headroom
   src/ui/SettingsDialog.cpp
   src/ui/SettingsDialog.h
   src/ui/EngineDialog.cpp
+  src/ui/EngineDialogClock.cpp
+  src/ui/EngineDialogSystemd.cpp
   src/ui/EngineDialog.h
   src/ui/AutoConnectRulesDialog.cpp
   src/ui/AutoConnectRulesDialog.h
-  src/ui/SessionsDialog.cpp
-  src/ui/SessionsDialog.h
-  src/ui/RecorderDialog.cpp
-  src/ui/RecorderDialog.h
-  src/ui/LogsDialog.cpp
-  src/ui/LogsDialog.h
-  src/ui/VisualizerPage.cpp
+	  src/ui/SessionsDialog.cpp
+	  src/ui/SessionsDialog.h
+	  src/ui/RecorderDialog.cpp
+	  src/ui/RecorderDialogRecording.cpp
+	  src/ui/RecorderDialogTargets.cpp
+	  src/ui/RecorderDialog.h
+	  src/ui/LogsDialog.cpp
+	  src/ui/LogsDialog.h
+	  src/ui/VisualizerPage.cpp
   src/ui/VisualizerPage.h
   src/ui/VisualizerWidget.cpp
   src/ui/VisualizerWidget.h
@@ -121,13 +147,35 @@ if (HEADROOM_BUILD_TUI)
 
   qt_add_executable(headroom_tui
     src/tui/main.cpp
-    src/backend/PipeWireThread.cpp
-    src/backend/PipeWireThread.h
-    src/backend/PipeWireGraph.cpp
-    src/backend/PipeWireGraph.h
-    src/backend/PatchbayProfiles.cpp
-    src/backend/PatchbayProfiles.h
-    src/backend/PatchbayProfileHooks.cpp
+    src/tui/TuiApp.cpp
+    src/tui/TuiAppActions.cpp
+    src/tui/TuiAppActionsDevices.cpp
+    src/tui/TuiAppActionsPatchbay.cpp
+    src/tui/TuiAppInternal.h
+    src/tui/TuiAppRender.cpp
+    src/tui/TuiPrompts.cpp
+    src/tui/TuiRenderAudio.cpp
+	    src/tui/TuiRenderEq.cpp
+	    src/tui/TuiRenderRecording.cpp
+	    src/tui/TuiRenderSystem.cpp
+	    src/tui/TuiUtil.cpp
+	    src/tui/TuiUtilFormat.cpp
+	    src/tui/TuiUtilPrompts.cpp
+	    src/tui/TuiInternal.h
+	    src/backend/PipeWireThread.cpp
+	    src/backend/PipeWireThread.h
+		    src/backend/PipeWireGraph.cpp
+	    src/backend/PipeWireGraph.h
+	    src/backend/PipeWireGraphRegistry.cpp
+	    src/backend/PipeWireGraphOpsLinks.cpp
+	    src/backend/PipeWireGraphOpsMetadata.cpp
+	    src/backend/PipeWireGraphOpsMetaProfiler.cpp
+	    src/backend/PipeWireGraphOpsNodeControls.cpp
+	    src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
+	    src/backend/PipeWireGraphInternal.h
+	    src/backend/PatchbayProfiles.cpp
+	    src/backend/PatchbayProfiles.h
+	    src/backend/PatchbayProfileHooks.cpp
     src/backend/PatchbayProfileHooks.h
     src/backend/PatchbayAutoConnectRules.cpp
     src/backend/PatchbayAutoConnectRules.h
@@ -136,12 +184,16 @@ if (HEADROOM_BUILD_TUI)
     src/backend/AudioRecorder.cpp
     src/backend/AudioRecorder.h
     src/backend/EngineControl.cpp
-    src/backend/EngineControl.h
-    src/backend/EqConfig.h
-    src/backend/EqManager.cpp
-    src/backend/EqManager.h
-    src/backend/ParametricEqFilter.cpp
-    src/backend/ParametricEqFilter.h
+	    src/backend/EngineControl.h
+	    src/backend/EqConfig.h
+	    src/backend/EqManager.cpp
+	    src/backend/EqManagerPersist.cpp
+	    src/backend/EqManagerRealtime.cpp
+	    src/backend/EqManager.h
+	    src/backend/ParametricEqFilter.cpp
+	    src/backend/ParametricEqFilterDesign.cpp
+	    src/backend/ParametricEqFilterResponse.cpp
+	    src/backend/ParametricEqFilter.h
   )
 
   set_target_properties(headroom_tui PROPERTIES OUTPUT_NAME headroom-tui)
@@ -166,19 +218,46 @@ endif()
 if (HEADROOM_BUILD_CLI)
   qt_add_executable(headroomctl
     src/cli/main.cpp
+    src/cli/CliCommands.cpp
+    src/cli/CliCommandsEngine.cpp
+    src/cli/CliCommandsEngineClock.cpp
+    src/cli/CliCommandsEngineMidiBridge.cpp
+    src/cli/CliCommandsEngineSystemd.cpp
+    src/cli/CliCommandsEq.cpp
+    src/cli/CliCommandsGraph.cpp
+    src/cli/CliCommandsGraphConnections.cpp
+    src/cli/CliCommandsGraphControls.cpp
+    src/cli/CliCommandsGraphListing.cpp
+    src/cli/CliCommandsPatchbay.cpp
+    src/cli/CliCommandsPatchbayAutoconnect.cpp
+    src/cli/CliCommandsPatchbayHooks.cpp
+    src/cli/CliCommandsPatchbayPortConfig.cpp
+    src/cli/CliCommandsRecord.cpp
+    src/cli/CliCommandsSession.cpp
+    src/cli/CliUtil.cpp
+    src/cli/CliInternal.h
     src/backend/PipeWireThread.cpp
     src/backend/PipeWireThread.h
-    src/backend/PipeWireGraph.cpp
-    src/backend/PipeWireGraph.h
-    src/backend/PatchbayProfiles.cpp
-    src/backend/PatchbayProfiles.h
-    src/backend/PatchbayProfileHooks.cpp
+	    src/backend/PipeWireGraph.cpp
+	    src/backend/PipeWireGraph.h
+	    src/backend/PipeWireGraphRegistry.cpp
+	    src/backend/PipeWireGraphOpsLinks.cpp
+	    src/backend/PipeWireGraphOpsMetadata.cpp
+	    src/backend/PipeWireGraphOpsMetaProfiler.cpp
+	    src/backend/PipeWireGraphOpsNodeControls.cpp
+	    src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
+	    src/backend/PipeWireGraphInternal.h
+	    src/backend/PatchbayProfiles.cpp
+	    src/backend/PatchbayProfiles.h
+	    src/backend/PatchbayProfileHooks.cpp
     src/backend/PatchbayProfileHooks.h
     src/backend/PatchbayAutoConnectRules.cpp
     src/backend/PatchbayAutoConnectRules.h
     src/backend/PatchbayPortConfig.cpp
     src/backend/PatchbayPortConfig.h
     src/backend/SessionSnapshots.cpp
+    src/backend/SessionSnapshotsApply.cpp
+    src/backend/SessionSnapshotsSerialize.cpp
     src/backend/SessionSnapshots.h
     src/backend/AudioRecorder.cpp
     src/backend/AudioRecorder.h

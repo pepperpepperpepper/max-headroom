@@ -95,16 +95,29 @@ for _ in $(seq 1 240); do
 done
 
 # Prefer an snd-aloop ALSA sink when available; otherwise take the first sink.
-SINK_ID="$(
+pick_sink_id() {
   XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-dump -r pipewire-0 | jq -r '
-    [.[] | select(.type=="PipeWire:Interface:Node")
-      | select(.info.props["media.class"]=="Audio/Sink")
-      | {id:.id, name:(.info.props["node.name"]//""), desc:(.info.props["node.description"]//"")} ] as $sinks
-    | ($sinks | map(select(.name | test("snd_aloop"))) | .[0].id)
-      // ($sinks | .[0].id)
-      // empty
-  '
-)"
+      [.[] | select(.type=="PipeWire:Interface:Node")
+        | select(.info.props["media.class"]=="Audio/Sink")
+        | {id:.id, name:(.info.props["node.name"]//""), desc:(.info.props["node.description"]//"")} ] as $sinks
+      | ($sinks | map(select(.name | test("^Headroom-NullSink$"))) | .[0].id)
+        // ($sinks | map(select(.name | test("snd_aloop"))) | .[0].id)
+        // ($sinks | .[0].id)
+        // empty
+    '
+}
+
+SINK_ID="$(pick_sink_id)"
+
+if [[ -z "$SINK_ID" || "$SINK_ID" == "null" ]]; then
+  # Headless environments often have no ALSA sinks; create a controllable null sink.
+  XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cli -r pipewire-0-manager create-node spa-node-factory \
+    factory.name=support.null-audio-sink node.name=Headroom-NullSink node.description=NullSink \
+    media.class=Audio/Sink object.linger=true audio.channels=2 'audio.position=[ FL FR ]' >/dev/null 2>&1 || true
+  sleep 0.2
+  SINK_ID="$(pick_sink_id)"
+fi
+
 if [[ -z "$SINK_ID" || "$SINK_ID" == "null" ]]; then
   echo "Could not find a controllable Audio/Sink node for tray demo." >&2
   echo "PipeWire nodes:" >&2
@@ -143,6 +156,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
   XDG_RUNTIME_DIR="$RUNTIME_DIR" \
   XDG_CONFIG_HOME="$XDG_CONFIG_HOME" \
   XDG_CACHE_HOME="$XDG_CACHE_HOME" \
+  QT_QPA_PLATFORM="${QT_QPA_PLATFORM_TRAY:-xcb}" \
   ROOT="$ROOT" \
   OUT_DIR="$OUT_DIR" \
   SINK_ID="$SINK_ID" \
@@ -169,6 +183,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       # Give Qt time to paint (and avoid the old “every image is the same” issue).
       sleep 0.25
       import -window root "$path"
+      chmod 644 "$path" 2>/dev/null || true
     }
 
     capture_root_until_hash_differs() {
@@ -183,6 +198,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
         h="$(sha256sum "$tmp_path" | awk "{print \$1}")"
         if [[ "$h" != "$baseline_hash" ]]; then
           mv -f "$tmp_path" "$out_path"
+          chmod 644 "$out_path" 2>/dev/null || true
           return 0
         fi
         sleep 0.25
@@ -190,6 +206,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
 
       echo "error: screenshot did not change after retries: $out_path" >&2
       mv -f "$tmp_path" "$out_path"
+      chmod 644 "$out_path" 2>/dev/null || true
       return 1
     }
 
@@ -279,6 +296,25 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       local x=$((mx + mw / 2))
       local y=$((my + (mh * ratio) / 100))
       xdotool mousemove --sync "$x" "$y"
+    }
+
+    menu_set_slider_pct() {
+      local pct="$1"
+      local geom=""
+      geom="$(menu_geometry || true)"
+      [[ -n "$geom" ]] || return 0
+      local menu_win mx my mw mh
+      read -r menu_win mx my mw mh <<<"$geom"
+
+      local track_left=$((mx + (mw * 40) / 100))
+      local track_right=$((mx + (mw * 92) / 100))
+      local x=$((track_left + ((track_right - track_left) * pct) / 100))
+
+      # Heuristic: the slider lives around the middle of the menu.
+      local y=$((my + (mh * 55) / 100))
+
+      xdotool mousemove --sync "$x" "$y" click 1
+      sleep 0.2
     }
 
     menu_close() {
@@ -388,33 +424,31 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
 
     # Slider positions: set volume externally, then capture open menu.
     echo "demo: capture volume 30%"
-    ctl_retry 40 set-volume "$SINK_ID" 30% || {
-      echo "error: failed to set sink $SINK_ID volume to 30%" >&2
+    if ! ctl_retry 40 set-volume "$SINK_ID" 30%; then
+      echo "warn: failed to set sink $SINK_ID volume to 30% (continuing)" >&2
+    fi
+    if ! wait_sink_volume_pct 30; then
+      echo "warn: sink $SINK_ID did not report 30% within timeout (continuing)" >&2
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
-      exit 1
-    }
-    wait_sink_volume_pct 30 || {
-      echo "error: sink $SINK_ID did not report 30% within timeout" >&2
-      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
-      exit 1
-    }
+    fi
     menu_open
+    menu_set_slider_pct 30 || true
+    menu_hover_row_ratio 40 || true
     capture_root_until_hash_differs "$BASELINE_HASH" "$OUT_DIR/tray-menu-vol30.png"
     menu_close
     VOL30_HASH="$(sha256sum "$OUT_DIR/tray-menu-vol30.png" | awk "{print \$1}")"
 
     echo "demo: capture volume 80%"
-    ctl_retry 40 set-volume "$SINK_ID" 80% || {
-      echo "error: failed to set sink $SINK_ID volume to 80%" >&2
+    if ! ctl_retry 40 set-volume "$SINK_ID" 80%; then
+      echo "warn: failed to set sink $SINK_ID volume to 80% (continuing)" >&2
+    fi
+    if ! wait_sink_volume_pct 80; then
+      echo "warn: sink $SINK_ID did not report 80% within timeout (continuing)" >&2
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
-      exit 1
-    }
-    wait_sink_volume_pct 80 || {
-      echo "error: sink $SINK_ID did not report 80% within timeout" >&2
-      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
-      exit 1
-    }
+    fi
     menu_open
+    menu_set_slider_pct 80 || true
+    menu_hover_row_ratio 92 || true
     capture_root_until_hash_differs "$VOL30_HASH" "$OUT_DIR/tray-menu-vol80.png"
     menu_close
 

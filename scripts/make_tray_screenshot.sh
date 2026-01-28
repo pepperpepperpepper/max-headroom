@@ -60,6 +60,7 @@ echo "[3/4] Launch Xvfb + tray + Headroom, open tray menu, screenshot"
 xvfb-run -a -s "-screen 0 1100x700x24 -ac -nolisten tcp -extension GLX" bash -lc "
   set -euo pipefail
   export XDG_RUNTIME_DIR='$RUNTIME_DIR'
+  export QT_QPA_PLATFORM='${QT_QPA_PLATFORM_TRAY:-xcb}'
 
   stalonetray --geometry 1x1+6+6 --decorations none --window-type dock --skip-taskbar --icon-size 24 --slot-size 24 --log-level err &
   TRAY_PID=\$!
@@ -94,6 +95,7 @@ xvfb-run -a -s "-screen 0 1100x700x24 -ac -nolisten tcp -extension GLX" bash -lc
 
   sleep 0.2
   import -window root '$OUT_PATH'
+  chmod 644 '$OUT_PATH' 2>/dev/null || true
 
   kill -TERM \"\$HEADROOM_PID\" 2>/dev/null || true
   kill -TERM \"\$TRAY_PID\" 2>/dev/null || true

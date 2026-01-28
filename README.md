@@ -24,6 +24,12 @@ PipeWire-first mixer + patchbay + visualizers (waveform + spectrum + spectrogram
 
 ![Tray menu (muted)](screenshots/tray-menu-muted.png)
 
+![TUI (Outputs)](screenshots/tui-outputs.png)
+
+![TUI (Patchbay)](screenshots/tui-patchbay.png)
+
+![CLI (headroomctl)](screenshots/cli-commands.png)
+
 More: `screenshots/index.html`
 
 Tip: regenerate these locally with `./scripts/make_screenshots.sh`.

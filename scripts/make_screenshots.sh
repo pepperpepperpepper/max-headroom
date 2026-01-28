@@ -43,11 +43,217 @@ need dbus-daemon
 need jq
 need ffmpeg
 
-echo "[1/5] Build"
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+maybe_terminal_screenshots() {
+  local out_dir="$1"
+
+  if ! have xvfb-run || ! have openbox || ! have xterm || ! have xdotool || ! have import || ! have timeout; then
+    echo "info: skipping terminal screenshots (need xvfb-run, openbox, xterm, xdotool, import, timeout)" >&2
+    return 0
+  fi
+  if [[ ! -x "$ROOT/build/headroom-tui" || ! -x "$ROOT/build/headroomctl" ]]; then
+    echo "info: skipping terminal screenshots (missing ./build/headroom-tui or ./build/headroomctl)" >&2
+    return 0
+  fi
+
+  if ! timeout 120 xvfb-run -a -s "-screen 0 1200x760x24 -ac -nolisten tcp -extension GLX" env \
+    ROOT="$ROOT" \
+    OUT_DIR="$out_dir" \
+    XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+    XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-}" \
+    XDG_CACHE_HOME="${XDG_CACHE_HOME:-}" \
+    bash -lc '
+      set -euo pipefail
+
+      openbox >/dev/null 2>&1 &
+      OPENBOX_PID=$!
+      sleep 0.2
+      cleanup() {
+        set +e
+        terminate_pid "${CLI_PID:-}" || true
+        terminate_pid "${TUI_PID:-}" || true
+        [[ -n "${OPENBOX_PID:-}" ]] && kill -TERM "$OPENBOX_PID" 2>/dev/null || true
+      }
+      trap cleanup EXIT
+
+      terminate_pid() {
+        local pid="${1:-}"
+        [[ -z "$pid" ]] && return 0
+
+        kill -TERM "$pid" 2>/dev/null || true
+        for _ in $(seq 1 40); do
+          kill -0 "$pid" 2>/dev/null || return 0
+          sleep 0.05
+        done
+        kill -KILL "$pid" 2>/dev/null || true
+        for _ in $(seq 1 40); do
+          kill -0 "$pid" 2>/dev/null || return 0
+          sleep 0.05
+        done
+        return 0
+      }
+
+      wait_for_window() {
+        local name="$1"
+        local win=""
+        for _ in $(seq 1 200); do
+          win="$(timeout 1 xdotool search --onlyvisible --name "$name" 2>/dev/null | head -n 1 || true)"
+          [[ -n "$win" ]] && break
+          sleep 0.05
+        done
+        [[ -n "$win" ]] || return 1
+        echo "$win"
+      }
+
+      focus_window() {
+        local win="$1"
+        timeout 1 xdotool windowraise "$win" >/dev/null 2>&1 || true
+        timeout 1 xdotool windowfocus "$win" >/dev/null 2>&1 || true
+        sleep 0.05
+      }
+
+      capture_window() {
+        local win="$1"
+        local path="$2"
+        local tmp
+        tmp="$(mktemp "/tmp/headroom-shot-XXXXXX.png")"
+        for _ in $(seq 1 6); do
+          sleep 0.2
+          if timeout 2 import -window "$win" "$tmp" >/dev/null 2>&1; then
+            mv -f "$tmp" "$path"
+            chmod 644 "$path" 2>/dev/null || true
+            return 0
+          fi
+        done
+        rm -f "$tmp" 2>/dev/null || true
+        return 1
+      }
+
+      capture_root() {
+        local path="$1"
+        local tmp
+        tmp="$(mktemp "/tmp/headroom-shot-XXXXXX.png")"
+        for _ in $(seq 1 6); do
+          sleep 0.2
+          if timeout 2 import -window root "$tmp" >/dev/null 2>&1; then
+            mv -f "$tmp" "$path"
+            chmod 644 "$path" 2>/dev/null || true
+            return 0
+          fi
+        done
+        rm -f "$tmp" 2>/dev/null || true
+        return 1
+      }
+
+      # Ensure lists are non-empty for CLI screenshots.
+      "$ROOT/build/headroomctl" patchbay save screenshots >/dev/null 2>&1 || true
+      "$ROOT/build/headroomctl" session save screenshots >/dev/null 2>&1 || true
+
+      XTERM_OPTS=(-geometry 120x38 -fa "DejaVu Sans Mono" -fs 12 -bg "#0b0f19" -fg "#e2e8f0")
+
+      xterm "${XTERM_OPTS[@]}" -T "Headroom TUI" -e "$ROOT/build/headroom-tui" &
+      TUI_PID=$!
+      TUI_WIN="$(wait_for_window "Headroom TUI")"
+      focus_window "$TUI_WIN"
+
+      # Give headroom-tui time to paint.
+      sleep 0.6
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-outputs.png"
+
+      # Help overlay.
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers question || true
+      sleep 0.3
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-help.png" || true
+      timeout 1 xdotool key --clearmodifiers question || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.5
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-inputs.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.5
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-streams.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.5
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-patchbay.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.5
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-eq.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.6
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-recording.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.9
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-status.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers Tab || true
+      sleep 0.5
+      capture_window "$TUI_WIN" "$OUT_DIR/tui-engine.png" || true
+
+      focus_window "$TUI_WIN"
+      timeout 1 xdotool key --clearmodifiers q || true
+      terminate_pid "$TUI_PID" || true
+
+      CLI_SCRIPT="$(mktemp)"
+      cat >"$CLI_SCRIPT" <<'"'"'EOF'"'"'
+set -euo pipefail
+printf "$ headroomctl sinks\n"
+"$ROOT/build/headroomctl" sinks
+printf "\n$ headroomctl patchbay profiles\n"
+"$ROOT/build/headroomctl" patchbay profiles || true
+printf "\n$ headroomctl session list\n"
+"$ROOT/build/headroomctl" session list || true
+printf "\n$ headroomctl engine status\n"
+"$ROOT/build/headroomctl" engine status || true
+printf "\n"
+sleep 60
+EOF
+      chmod +x "$CLI_SCRIPT"
+
+      xterm "${XTERM_OPTS[@]}" -T "Headroom CLI" -e bash "$CLI_SCRIPT" &
+      CLI_PID=$!
+      CLI_WIN="$(wait_for_window "Headroom CLI")"
+      focus_window "$CLI_WIN"
+      sleep 3.0
+      capture_window "$CLI_WIN" "$OUT_DIR/cli-commands.png" || capture_root "$OUT_DIR/cli-commands.png" || true
+
+      rm -f "$CLI_SCRIPT" 2>/dev/null || true
+      terminate_pid "$CLI_PID" || true
+    '
+  then
+    echo "warn: terminal screenshots timed out (continuing)" >&2
+  fi
+}
+
+echo "[1/6] Build"
 cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build "$ROOT/build" -j >/dev/null
 
-echo "[2/5] Start private PipeWire + WirePlumber (snd-aloop preferred)"
+echo "[2/6] Tray menu screenshots"
+TRAY_LOG="$(mktemp "/tmp/headroom-tray-demo-XXXXXX.log")"
+if ! "$ROOT/scripts/make_tray_demo_screenshots.sh" "$OUT_DIR" >"$TRAY_LOG" 2>&1; then
+  echo "warn: tray demo screenshots failed; falling back to single tray-menu.png" >&2
+  tail -n 80 "$TRAY_LOG" >&2 || true
+  "$ROOT/scripts/make_tray_screenshot.sh" "$OUT_DIR/tray-menu.png" >"$TRAY_LOG" 2>&1 || true
+fi
+rm -f "$TRAY_LOG" 2>/dev/null || true
+
+echo "[3/6] Start private PipeWire + WirePlumber (snd-aloop preferred)"
 
 # If we can, load snd-aloop and relax /dev/snd permissions so an unprivileged PipeWire can open it.
 if command -v sudo >/dev/null 2>&1; then
@@ -80,7 +286,7 @@ for _ in $(seq 1 200); do
   sleep 0.05
 done
 
-echo "[3/5] Seed demo graph (loopback device + null sink + test tones)"
+echo "[4/6] Seed demo graph (loopback device + null sink + test tones)"
 
 # Extra virtual sink so screenshots show sink ordering.
 XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-cli -r pipewire-0-manager create-node spa-node-factory \
@@ -140,7 +346,7 @@ TONE2_PID=$!
 # Enable EQ for the virtual sink so the Patchbay screenshot includes the EQ node.
 XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" eq enable Headroom-NullSink2 on >/dev/null 2>&1 || true
 
-echo "[4/5] Capture screenshots (offscreen)"
+echo "[5/6] Capture screenshots (offscreen)"
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
@@ -151,10 +357,8 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 "$ROOT/build/headroom" --screenshot-window settings --screenshot "$OUT_DIR/settings.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --screenshot-window eq --screenshot "$OUT_DIR/eq.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 "$ROOT/build/headroom" --screenshot-window engine --screenshot "$OUT_DIR/engine.png" --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/scripts/make_tray_demo_screenshots.sh" "$OUT_DIR" >/dev/null 2>&1 \
-  || "$ROOT/scripts/make_tray_screenshot.sh" "$OUT_DIR/tray-menu.png" >/dev/null 2>&1 \
-  || true
+maybe_terminal_screenshots "$OUT_DIR" || true
 
-echo "[5/5] Done"
+echo "[6/6] Done"
 echo "Wrote:"
 ls -1 "$OUT_DIR"/*.png

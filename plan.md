@@ -29,13 +29,19 @@
 - Patchbay power features: persistent patchbay, auto-connect rules, port aliases, presets/profiles, blacklists.
 - Power-user UX: tray icon, multiple configuration profiles, startup/shutdown scripts/hooks.
 
+## Terminal / SSH parity (non-negotiable)
+
+- Treat `headroom-tui` + `headroomctl` as first-class: any control/action that exists in the GUI must also be possible over SSH (either via TUI hotkeys or a `headroomctl` command).
+- If something is inherently graphical (visualizers / drag layout), provide a useful terminal alternative (meters/diagnostics and machine-readable graph state via `headroomctl`) and document the difference.
+
 ## Screenshots
 
-- Generate screenshots (uses a temporary PipeWire instance + demo tone streams):
+- Generate screenshots (GUI + tray + terminal; uses a temporary PipeWire instance + demo tone streams):
   - `./scripts/make_screenshots.sh`
-  - Output: `screenshots/*.png`
+  - Output: `screenshots/*.png` (includes `tui-*.png` for Outputs/Inputs/Streams/Patchbay/EQ/Recording/Status/Engine + `cli-commands.png`)
   - Note: `make_screenshots.sh` starts a *private* `dbus-daemon` + `pipewire` + `wireplumber` instance and prefers `snd-aloop` (when available) so the visualizers show real audio. If `snd-aloop` can’t be used, it falls back to a virtual null sink.
   - Audio source: prefers `testdata/audio/demo.opus` (gitignored) and falls back to generated sine tones if missing.
+  - Terminal screenshots are captured via `Xvfb + xterm + xdotool + import` (best-effort; skipped if deps are missing).
 
 - Upload screenshots:
   - `wtf-upload screenshots/*.png`
@@ -80,6 +86,18 @@
   - Patchbay port ordering: ports are rendered in a stable, channel-aware order (e.g. `FL` before `FR`) to avoid confusing EQ node layouts like `in_playback_1`/`out_playback_1` appearing swapped between screenshots/runs.
 
 ## Task List
+
+### 0.0 (Testing) — now (blocker for release)
+
+- [ ] Add CTest wiring + `ctest` docs (local + CI).
+- [ ] Add a unit-test framework (Catch2 or QtTest) + baseline unit tests that run in CI.
+- [ ] Add a hermetic integration harness that launches a private `dbus-daemon` + `pipewire` + `wireplumber`, seeds a minimal graph, and exposes `XDG_RUNTIME_DIR`/`PIPEWIRE_REMOTE` to tests.
+- [ ] Add `headroomctl` contract tests (JSON shape + stable fields) for: `nodes`, `sinks`, `sources`, `ports`, `links`, `engine status`, `diagnostics`.
+- [ ] Add `headroomctl` integration tests for: `set-volume`/`mute`, `default-sink`/`default-source`, sink ordering (`sinks order ...`), patchbay connect/disconnect, profiles save/apply/delete, autoconnect enable/apply/rules, sessions save/apply/delete, EQ enable/preset, recording start/stop/status.
+- [ ] Add TUI smoke/E2E tests under `Xvfb` (navigation + hotkeys: defaults, reorder, connect/disconnect, EQ toggle) with deterministic artifacts.
+- [ ] Add GUI + tray smoke tests (offscreen launch, open key dialogs, tray demo run) — screenshot pipeline stays a required E2E pass, but add explicit “no-crash” assertions.
+- [ ] CI: add a workflow that runs unit tests + private-PipeWire integration tests on every PR/push (separate from the Flatpak build job).
+- [ ] Real PipeWire host validation: add a `scripts/host_test.sh` checklist runner (systemd user units, real devices, latency presets, MIDI bridge, recording with real audio) for the machine you’ll provide.
 
 ### 0.1 (CLI / SSH) — top priority
 
@@ -135,14 +153,10 @@
 
 ## Next Up (ordered, actionable)
 
-- [x] TUI: add a key legend/help overlay (alsamixer-style) + status line (selected node, volume, mute).
-- [x] TUI: add “default device” actions (set default sink/source) to match GUI behavior.
-- [x] CLI: add explicit `default-sink` / `default-source` commands (wrap `PipeWireGraph::setDefaultAudioSink/Source`).
-- [x] Patchbay: make `headroom.eq.*` ports readable (avoid `in_playback_1`/`out_playback_1` label overflow).
-- [x] Patchbay: make `headroom.eq.*` port labels unambiguous (prefix with `in`/`out` while still using the channel label).
-- [x] EQ: support interleaved multi-channel ports (e.g. sinks with only `playback_1`) so PipeWire can negotiate formats correctly.
-- [x] Screenshots: publish an uploaded gallery via `./scripts/publish_screenshots.sh` (latest: `https://tmp.uh-oh.wtf/2026/01/25/d803f947-index.html`).
-- [x] Release: commit + push to GitHub (`git@github.com:pepperpepperpepper/max-headroom.git`).
-- [x] TUI: add a lightweight Engine page (systemd user-unit status + start/stop/restart).
-- [x] CLI: add sink ordering commands (for remote layout control).
-- [x] Settings: add theme picker (system/dark/light) and apply immediately.
+- [ ] Tests: wire up CTest + unit test framework.
+- [ ] Tests: implement private PipeWire integration harness.
+- [ ] Tests: implement `headroomctl` command-matrix integration suite.
+- [ ] Tests: add TUI smoke/E2E tests under `Xvfb`.
+- [ ] Tests: add GUI/tray smoke tests (offscreen + tray demo).
+- [ ] Tests: add CI workflow to run the above on PRs.
+- [ ] Tests: run `scripts/host_test.sh` on a real PipeWire machine (systemd user units + real devices) and fix any gaps.
