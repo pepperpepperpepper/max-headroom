@@ -182,7 +182,7 @@ int main(int argc, char** argv)
         if (valid && graphHasMatch()) {
           scheduleAfterDelay();
         } else {
-          state->graphConn = QObject::connect(graph, &PipeWireGraph::graphChanged, target, [graphHasMatch, scheduleAfterDelay]() {
+          state->graphConn = QObject::connect(graph, &PipeWireGraph::topologyChanged, target, [graphHasMatch, scheduleAfterDelay]() {
             if (graphHasMatch()) {
               scheduleAfterDelay();
             }

@@ -30,7 +30,7 @@ void PipeWireGraph::onRegistryGlobal(void* data,
 
   const QString iface = QString::fromUtf8(type);
 
-  bool changed = false;
+  uint32_t changeFlags = 0;
   bool isNode = false;
   bool isMetadata = false;
   bool isProfiler = false;
@@ -56,7 +56,7 @@ void PipeWireGraph::onRegistryGlobal(void* data,
         node.description = node.name;
       }
       self->m_nodes.insert(id, node);
-      changed = true;
+      changeFlags |= ChangeTopology;
       isNode = true;
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Port)) {
       PwPortInfo port;
@@ -76,7 +76,7 @@ void PipeWireGraph::onRegistryGlobal(void* data,
         port.alias = port.name;
       }
       self->m_ports.insert(id, port);
-      changed = true;
+      changeFlags |= ChangeTopology;
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Link)) {
       PwLinkInfo link;
       link.id = id;
@@ -85,7 +85,7 @@ void PipeWireGraph::onRegistryGlobal(void* data,
       link.inputNodeId = dictU32(props, PW_KEY_LINK_INPUT_NODE).value_or(0);
       link.inputPortId = dictU32(props, PW_KEY_LINK_INPUT_PORT).value_or(0);
       self->m_links.insert(id, link);
-      changed = true;
+      changeFlags |= ChangeTopology;
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Module)) {
       PwModuleInfo m;
       m.id = id;
@@ -96,15 +96,15 @@ void PipeWireGraph::onRegistryGlobal(void* data,
         m.description = m.name;
       }
       self->m_modules.insert(id, m);
-      changed = true;
+      changeFlags |= ChangeTopology;
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Metadata)) {
       metadataName = dictString(props, PW_KEY_METADATA_NAME);
       if (metadataName == QStringLiteral("settings") || metadataName == QStringLiteral("default")) {
-        changed = true;
+        changeFlags |= ChangeMetadata;
         isMetadata = true;
       }
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Profiler)) {
-      changed = true;
+      changeFlags |= ChangeTopology;
       isProfiler = true;
     }
   }
@@ -119,8 +119,8 @@ void PipeWireGraph::onRegistryGlobal(void* data,
     self->bindProfiler(id);
   }
 
-  if (changed) {
-    self->scheduleGraphChanged();
+  if (changeFlags != 0) {
+    self->scheduleGraphChanged(changeFlags);
   }
 }
 
@@ -128,34 +128,34 @@ void PipeWireGraph::onRegistryGlobalRemove(void* data, uint32_t id)
 {
   auto* self = static_cast<PipeWireGraph*>(data);
 
-  bool changed = false;
+  uint32_t changeFlags = 0;
   bool removedNode = false;
   bool removedMetadata = false;
   bool removedProfiler = false;
   {
     std::lock_guard<std::mutex> lock(self->m_mutex);
     if (self->m_links.remove(id) > 0) {
-      changed = true;
+      changeFlags |= ChangeTopology;
     }
     if (self->m_ports.remove(id) > 0) {
-      changed = true;
+      changeFlags |= ChangeTopology;
     }
     if (self->m_modules.remove(id) > 0) {
-      changed = true;
+      changeFlags |= ChangeTopology;
     }
     if (self->m_nodes.remove(id) > 0) {
-      changed = true;
+      changeFlags |= ChangeTopology;
       removedNode = true;
     }
     if (self->m_nodeControls.remove(id) > 0) {
-      changed = true;
+      changeFlags |= ChangeTopology;
     }
     if (self->m_metadataBindings.contains(id)) {
-      changed = true;
+      changeFlags |= ChangeMetadata;
       removedMetadata = true;
     }
     if (self->m_profilerBinding && self->m_profilerBinding->profilerId == id) {
-      changed = true;
+      changeFlags |= ChangeTopology;
       removedProfiler = true;
     }
   }
@@ -170,8 +170,8 @@ void PipeWireGraph::onRegistryGlobalRemove(void* data, uint32_t id)
     self->unbindProfiler(id);
   }
 
-  if (changed) {
-    self->scheduleGraphChanged();
+  if (changeFlags != 0) {
+    self->scheduleGraphChanged(changeFlags);
   }
 }
 
@@ -292,7 +292,7 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   }
 
   if (changed) {
-    binding->graph->scheduleGraphChanged();
+    binding->graph->scheduleGraphChanged(ChangeNodeControls);
   }
 }
 
@@ -538,4 +538,3 @@ void PipeWireGraph::unbindProfiler(uint32_t id)
   }
   delete binding;
 }
-

@@ -219,7 +219,7 @@ RecorderDialog::RecorderDialog(PipeWireGraph* graph, AudioRecorder* recorder, QW
   });
 
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &RecorderDialog::rebuildTargets);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &RecorderDialog::rebuildTargets);
   }
 
   if (m_recorder) {

@@ -13,7 +13,7 @@ PatchbayAutoConnectController::PatchbayAutoConnectController(PipeWireGraph* grap
   if (!m_graph) {
     return;
   }
-  connect(m_graph, &PipeWireGraph::graphChanged, this, &PatchbayAutoConnectController::scheduleApply);
+  connect(m_graph, &PipeWireGraph::topologyChanged, this, &PatchbayAutoConnectController::scheduleApply);
 
   m_timer = new QTimer(this);
   m_timer->setSingleShot(true);
@@ -47,4 +47,3 @@ void PatchbayAutoConnectController::apply()
   }
   m_applying = false;
 }
-

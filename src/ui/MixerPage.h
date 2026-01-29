@@ -1,13 +1,19 @@
 #pragma once
 
+#include <QHash>
 #include <QWidget>
 #include <QPointer>
+
+#include <cstdint>
 
 class QLineEdit;
 class QScrollArea;
 class QTimer;
 class QComboBox;
 class QPushButton;
+class QSlider;
+class QLabel;
+class QCheckBox;
 class PipeWireGraph;
 class EqManager;
 class PipeWireThread;
@@ -28,6 +34,7 @@ public slots:
 
 private:
   void scheduleRebuild();
+  void refreshControls();
   void rebuild();
   void tickMeters();
 
@@ -44,4 +51,8 @@ private:
   QTimer* m_rebuildTimer = nullptr;
   QTimer* m_meterTimer = nullptr;
   QList<QPointer<LevelMeterWidget>> m_meters;
+
+  QHash<uint32_t, QPointer<QSlider>> m_volumeSliders;
+  QHash<uint32_t, QPointer<QLabel>> m_volumePcts;
+  QHash<uint32_t, QPointer<QCheckBox>> m_mutes;
 };

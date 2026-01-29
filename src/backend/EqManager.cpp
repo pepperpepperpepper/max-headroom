@@ -8,7 +8,7 @@ EqManager::EqManager(PipeWireThread* pw, PipeWireGraph* graph, QObject* parent)
     , m_graph(graph)
 {
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &EqManager::onGraphChanged);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &EqManager::onGraphChanged);
   }
   scheduleReconcile();
 }

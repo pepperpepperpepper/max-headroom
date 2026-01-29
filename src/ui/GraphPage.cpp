@@ -39,7 +39,7 @@ GraphPage::GraphPage(PipeWireGraph* graph, QWidget* parent)
 
   connect(m_filter, &QLineEdit::textChanged, this, &GraphPage::rebuild);
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &GraphPage::rebuild);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &GraphPage::rebuild);
   }
 
   rebuild();

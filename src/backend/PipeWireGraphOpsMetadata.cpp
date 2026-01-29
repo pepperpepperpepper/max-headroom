@@ -95,7 +95,7 @@ int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* 
   }
 
   if (changed) {
-    graph->scheduleGraphChanged();
+    graph->scheduleGraphChanged(ChangeMetadata);
   }
 
   return 0;

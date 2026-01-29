@@ -242,8 +242,10 @@ std::optional<uint32_t> PipeWireGraph::defaultAudioSourceId() const
   return m_configuredAudioSourceId;
 }
 
-void PipeWireGraph::scheduleGraphChanged()
+void PipeWireGraph::scheduleGraphChanged(uint32_t flags)
 {
+  m_pendingChangeFlags.fetch_or(flags, std::memory_order_relaxed);
+
   bool expected = false;
   if (!m_emitScheduled.compare_exchange_strong(expected, true)) {
     return;
@@ -253,8 +255,18 @@ void PipeWireGraph::scheduleGraphChanged()
       this,
       [this]() {
         m_emitScheduled.store(false);
+        const uint32_t changeFlags = m_pendingChangeFlags.exchange(0U, std::memory_order_relaxed);
+
         emit graphChanged();
+        if (changeFlags & ChangeTopology) {
+          emit topologyChanged();
+        }
+        if (changeFlags & ChangeNodeControls) {
+          emit nodeControlsChanged();
+        }
+        if (changeFlags & ChangeMetadata) {
+          emit metadataChanged();
+        }
       },
       Qt::QueuedConnection);
 }
-

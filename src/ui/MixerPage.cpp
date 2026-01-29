@@ -28,6 +28,8 @@
 #include <functional>
 
 namespace mixer {
+using RegisterControlsFn = std::function<void(uint32_t, QSlider*, QLabel*, QCheckBox*)>;
+
 QGroupBox* makeSection(const QString& title,
                        const QList<PwNodeInfo>& nodes,
                        PipeWireGraph* graph,
@@ -36,6 +38,7 @@ QGroupBox* makeSection(const QString& title,
                        const QString& filter,
                        std::function<void(const PwNodeInfo&)> onEqForNode,
                        std::function<void(const PwNodeInfo&)> onVisualizeForNode,
+                       RegisterControlsFn registerControls,
                        QList<QPointer<LevelMeterWidget>>& meters,
                        QWidget* parent);
 
@@ -47,6 +50,7 @@ QGroupBox* makeStreamsSection(const QString& title,
                               const QString& filter,
                               std::function<void(const PwNodeInfo&)> onEqForStream,
                               std::function<void(const PwNodeInfo&)> onVisualizeForStream,
+                              RegisterControlsFn registerControls,
                               QList<QPointer<LevelMeterWidget>>& meters,
                               QWidget* parent);
 } // namespace mixer
@@ -111,7 +115,9 @@ MixerPage::MixerPage(PipeWireThread* pw, PipeWireGraph* graph, EqManager* eq, QW
 
   connect(m_filter, &QLineEdit::textChanged, this, &MixerPage::scheduleRebuild);
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &MixerPage::scheduleRebuild);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &MixerPage::scheduleRebuild);
+    connect(m_graph, &PipeWireGraph::metadataChanged, this, &MixerPage::scheduleRebuild);
+    connect(m_graph, &PipeWireGraph::nodeControlsChanged, this, &MixerPage::refreshControls);
   }
 
   connect(m_setDefaultOutput, &QPushButton::clicked, this, [this]() {
@@ -149,6 +155,73 @@ void MixerPage::scheduleRebuild()
   }
 }
 
+void MixerPage::refreshControls()
+{
+  if (!m_graph) {
+    return;
+  }
+
+  QHash<uint32_t, QPointer<QSlider>> sliders;
+  QHash<uint32_t, QPointer<QLabel>> pcts;
+  QHash<uint32_t, QPointer<QCheckBox>> mutes;
+  sliders.reserve(m_volumeSliders.size());
+  pcts.reserve(m_volumePcts.size());
+  mutes.reserve(m_mutes.size());
+
+  auto syncOne = [&](uint32_t nodeId) {
+    QSlider* slider = m_volumeSliders.value(nodeId);
+    QLabel* pct = m_volumePcts.value(nodeId);
+    QCheckBox* mute = m_mutes.value(nodeId);
+
+    if (!slider) {
+      return;
+    }
+
+    sliders.insert(nodeId, slider);
+    if (pct) {
+      pcts.insert(nodeId, pct);
+    }
+    if (mute) {
+      mutes.insert(nodeId, mute);
+    }
+
+    const auto controlsOpt = m_graph->nodeControls(nodeId);
+    const PwNodeControls c = controlsOpt.value_or(PwNodeControls{});
+    const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, 150);
+
+    if (slider->isEnabled() != c.hasVolume) {
+      slider->setEnabled(c.hasVolume);
+    }
+
+    if (!slider->isSliderDown() && slider->value() != volPct) {
+      const QSignalBlocker blocker(slider);
+      slider->setValue(volPct);
+    }
+
+    if (pct) {
+      pct->setText(QStringLiteral("%1%").arg(slider->value()));
+    }
+
+    if (mute) {
+      if (mute->isEnabled() != c.hasMute) {
+        mute->setEnabled(c.hasMute);
+      }
+      if (mute->isChecked() != c.mute) {
+        const QSignalBlocker blocker(mute);
+        mute->setChecked(c.mute);
+      }
+    }
+  };
+
+  for (auto it = m_volumeSliders.cbegin(); it != m_volumeSliders.cend(); ++it) {
+    syncOne(it.key());
+  }
+
+  m_volumeSliders.swap(sliders);
+  m_volumePcts.swap(pcts);
+  m_mutes.swap(mutes);
+}
+
 void MixerPage::tickMeters()
 {
   QList<QPointer<LevelMeterWidget>> alive;
@@ -170,6 +243,9 @@ void MixerPage::rebuild()
   }
 
   m_meters.clear();
+  m_volumeSliders.clear();
+  m_volumePcts.clear();
+  m_mutes.clear();
 
   const QString filter = m_filter ? m_filter->text() : QString{};
 
@@ -192,6 +268,21 @@ void MixerPage::rebuild()
   const QList<PwNodeInfo> nodes = m_graph ? m_graph->nodes() : QList<PwNodeInfo>{};
 
   QList<QPointer<LevelMeterWidget>> meters;
+
+  auto registerControls = [this](uint32_t nodeId, QSlider* slider, QLabel* pct, QCheckBox* mute) {
+    if (nodeId == 0) {
+      return;
+    }
+    if (slider) {
+      m_volumeSliders.insert(nodeId, slider);
+    }
+    if (pct) {
+      m_volumePcts.insert(nodeId, pct);
+    }
+    if (mute) {
+      m_mutes.insert(nodeId, mute);
+    }
+  };
 
   QList<PwNodeInfo> playback;
   QList<PwNodeInfo> recording;
@@ -267,8 +358,10 @@ void MixerPage::rebuild()
     m_eq->setPresetForNodeName(node.name, dlg.preset());
   };
 
-  layout->addWidget(mixer::makeStreamsSection(tr("Playback (apps)"), playback, outputs, m_graph, m_pw, filter, onEq, onVisualizeStream, meters, m_container));
-  layout->addWidget(mixer::makeStreamsSection(tr("Recording (apps)"), recording, inputs, m_graph, m_pw, filter, onEq, onVisualizeStream, meters, m_container));
+  layout->addWidget(mixer::makeStreamsSection(
+      tr("Playback (apps)"), playback, outputs, m_graph, m_pw, filter, onEq, onVisualizeStream, registerControls, meters, m_container));
+  layout->addWidget(mixer::makeStreamsSection(
+      tr("Recording (apps)"), recording, inputs, m_graph, m_pw, filter, onEq, onVisualizeStream, registerControls, meters, m_container));
 
   const uint32_t defaultSinkId = m_graph ? m_graph->defaultAudioSinkId().value_or(0) : 0;
   const uint32_t defaultSourceId = m_graph ? m_graph->defaultAudioSourceId().value_or(0) : 0;
@@ -329,10 +422,13 @@ void MixerPage::rebuild()
   repopulateDefaultBox(m_defaultOutput, m_setDefaultOutput, outputs, defaultSinkId);
   repopulateDefaultBox(m_defaultInput, m_setDefaultInput, inputs, defaultSourceId);
 
-  layout->addWidget(mixer::makeSection(tr("Output Devices"), outputs, m_graph, m_pw, defaultSinkId, filter, onEq, onVisualizeNode, meters, m_container));
-  layout->addWidget(mixer::makeSection(tr("Input Devices"), inputs, m_graph, m_pw, defaultSourceId, filter, onEq, onVisualizeNode, meters, m_container));
+  layout->addWidget(mixer::makeSection(
+      tr("Output Devices"), outputs, m_graph, m_pw, defaultSinkId, filter, onEq, onVisualizeNode, registerControls, meters, m_container));
+  layout->addWidget(mixer::makeSection(
+      tr("Input Devices"), inputs, m_graph, m_pw, defaultSourceId, filter, onEq, onVisualizeNode, registerControls, meters, m_container));
 
-  layout->addWidget(mixer::makeSection(tr("Other Nodes"), other, m_graph, m_pw, 0, filter, {}, onVisualizeNode, meters, m_container));
+  layout->addWidget(
+      mixer::makeSection(tr("Other Nodes"), other, m_graph, m_pw, 0, filter, {}, onVisualizeNode, registerControls, meters, m_container));
 
   layout->addStretch(1);
 

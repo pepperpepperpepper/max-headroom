@@ -19,6 +19,8 @@ VisualizerWidget::VisualizerWidget(AudioTap* tap, QWidget* parent)
     , m_tap(tap)
 {
   setAutoFillBackground(false);
+  setAttribute(Qt::WA_OpaquePaintEvent, true);
+  setAttribute(Qt::WA_NoSystemBackground, true);
   setMinimumHeight(280);
 
   m_timer = new QTimer(this);

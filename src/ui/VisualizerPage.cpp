@@ -106,7 +106,7 @@ VisualizerPage::VisualizerPage(PipeWireGraph* graph, AudioTap* tap, QWidget* par
   root->addWidget(m_widget, 1);
 
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &VisualizerPage::repopulateSources);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &VisualizerPage::repopulateSources);
   }
   if (m_tap) {
     connect(m_tap, &AudioTap::streamStateChanged, this, [this](const QString& s) { m_state->setText(s); });

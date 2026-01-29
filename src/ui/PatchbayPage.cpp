@@ -187,7 +187,7 @@ PatchbayPage::PatchbayPage(PipeWireGraph* graph, QWidget* parent)
   });
 
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &PatchbayPage::scheduleRebuild);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, &PatchbayPage::scheduleRebuild);
   }
   rebuild();
 }
@@ -419,4 +419,3 @@ void PatchbayPage::deleteSelectedProfile()
   }
   reloadProfiles();
 }
-

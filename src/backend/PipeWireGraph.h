@@ -162,8 +162,17 @@ public:
 
 signals:
   void graphChanged();
+  void topologyChanged();
+  void nodeControlsChanged();
+  void metadataChanged();
 
 private:
+  enum ChangeFlag : uint32_t {
+    ChangeTopology = 1U << 0U,
+    ChangeNodeControls = 1U << 1U,
+    ChangeMetadata = 1U << 2U,
+  };
+
   struct NodeBinding;
   struct MetadataBinding;
   struct ProfilerBinding;
@@ -188,7 +197,7 @@ private:
   void bindProfiler(uint32_t id);
   void unbindProfiler(uint32_t id);
 
-  void scheduleGraphChanged();
+  void scheduleGraphChanged(uint32_t flags);
 
   PipeWireThread* m_pw = nullptr;
   pw_registry* m_registry = nullptr;
@@ -225,5 +234,6 @@ private:
   // until disconnect; with object.linger=true, links can persist beyond our lifetime.
   QVector<void*> m_createdLinkProxies;
 
+  std::atomic_uint32_t m_pendingChangeFlags{0};
   std::atomic_bool m_emitScheduled{false};
 };

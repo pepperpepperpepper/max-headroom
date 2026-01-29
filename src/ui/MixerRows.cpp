@@ -42,6 +42,7 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
                      bool isDefault,
                      std::function<void()> onEq,
                      std::function<void()> onVisualize,
+                     std::function<void(uint32_t, QSlider*, QLabel*, QCheckBox*)> registerControls,
                      QList<QPointer<LevelMeterWidget>>& meters,
                      QWidget* parent)
 {
@@ -104,25 +105,40 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
     h->addWidget(eqBtn, 0);
   }
 
-  QObject::connect(slider, &QSlider::valueChanged, row, [pct](int v) { pct->setText(QStringLiteral("%1%").arg(v)); });
-  QObject::connect(slider, &QSlider::valueChanged, row, [graph, nodeId = node.id, slider](int v) {
-    if (!graph || slider->isSliderDown()) {
+  constexpr int kSnapPct = 100;
+  constexpr int kSnapThreshold = 2;
+
+  auto applyVolume = [graph, nodeId = node.id, slider, pct](int raw) {
+    if (!slider) {
       return;
     }
-    graph->setNodeVolume(nodeId, static_cast<float>(v) / 100.0f);
-  });
-  QObject::connect(slider, &QSlider::sliderReleased, row, [graph, nodeId = node.id, slider]() {
-    if (!graph) {
+
+    const int snapped = (std::abs(raw - kSnapPct) <= kSnapThreshold) ? kSnapPct : raw;
+    if (snapped != raw) {
+      slider->setValue(snapped);
       return;
     }
-    graph->setNodeVolume(nodeId, static_cast<float>(slider->value()) / 100.0f);
-  });
+
+    if (pct) {
+      pct->setText(QStringLiteral("%1%").arg(snapped));
+    }
+    if (graph && nodeId != 0) {
+      graph->setNodeVolume(nodeId, static_cast<float>(snapped) / 100.0f);
+    }
+  };
+
+  QObject::connect(slider, &QSlider::valueChanged, row, applyVolume);
+  QObject::connect(slider, &QSlider::sliderReleased, row, [slider, applyVolume]() { applyVolume(slider->value()); });
   QObject::connect(mute, &QCheckBox::toggled, row, [graph, nodeId = node.id](bool checked) {
     if (!graph) {
       return;
     }
     graph->setNodeMute(nodeId, checked);
   });
+
+  if (registerControls) {
+    registerControls(node.id, slider, pct, mute);
+  }
 
   return row;
 }
@@ -216,6 +232,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
                        const QList<PwNodeInfo>& devices,
                        std::function<void()> onEq,
                        std::function<void()> onVisualize,
+                       std::function<void(uint32_t, QSlider*, QLabel*, QCheckBox*)> registerControls,
                        QList<QPointer<LevelMeterWidget>>& meters,
                        QWidget* parent)
 {
@@ -322,25 +339,40 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
 
   h->addWidget(deviceBox, 0);
 
-  QObject::connect(slider, &QSlider::valueChanged, row, [pct](int v) { pct->setText(QStringLiteral("%1%").arg(v)); });
-  QObject::connect(slider, &QSlider::valueChanged, row, [graph, nodeId = stream.id, slider](int v) {
-    if (!graph || slider->isSliderDown()) {
+  constexpr int kSnapPct = 100;
+  constexpr int kSnapThreshold = 2;
+
+  auto applyVolume = [graph, nodeId = stream.id, slider, pct](int raw) {
+    if (!slider) {
       return;
     }
-    graph->setNodeVolume(nodeId, static_cast<float>(v) / 100.0f);
-  });
-  QObject::connect(slider, &QSlider::sliderReleased, row, [graph, nodeId = stream.id, slider]() {
-    if (!graph) {
+
+    const int snapped = (std::abs(raw - kSnapPct) <= kSnapThreshold) ? kSnapPct : raw;
+    if (snapped != raw) {
+      slider->setValue(snapped);
       return;
     }
-    graph->setNodeVolume(nodeId, static_cast<float>(slider->value()) / 100.0f);
-  });
+
+    if (pct) {
+      pct->setText(QStringLiteral("%1%").arg(snapped));
+    }
+    if (graph && nodeId != 0) {
+      graph->setNodeVolume(nodeId, static_cast<float>(snapped) / 100.0f);
+    }
+  };
+
+  QObject::connect(slider, &QSlider::valueChanged, row, applyVolume);
+  QObject::connect(slider, &QSlider::sliderReleased, row, [slider, applyVolume]() { applyVolume(slider->value()); });
   QObject::connect(mute, &QCheckBox::toggled, row, [graph, nodeId = stream.id](bool checked) {
     if (!graph) {
       return;
     }
     graph->setNodeMute(nodeId, checked);
   });
+
+  if (registerControls) {
+    registerControls(stream.id, slider, pct, mute);
+  }
 
   return row;
 }
@@ -354,6 +386,7 @@ QGroupBox* makeSection(const QString& title,
                        const QString& filter,
                        std::function<void(const PwNodeInfo&)> onEqForNode,
                        std::function<void(const PwNodeInfo&)> onVisualizeForNode,
+                       std::function<void(uint32_t, QSlider*, QLabel*, QCheckBox*)> registerControls,
                        QList<QPointer<LevelMeterWidget>>& meters,
                        QWidget* parent)
 {
@@ -385,7 +418,7 @@ QGroupBox* makeSection(const QString& title,
     }
 
     const bool isDefault = defaultNodeId != 0 && node.id == defaultNodeId;
-    v->addWidget(makeNodeRow(graph, pw, node, controls, isDefault, std::move(onEq), std::move(onVisualize), meters, box));
+    v->addWidget(makeNodeRow(graph, pw, node, controls, isDefault, std::move(onEq), std::move(onVisualize), registerControls, meters, box));
     ++count;
   }
 
@@ -406,6 +439,7 @@ QGroupBox* makeStreamsSection(const QString& title,
                               const QString& filter,
                               std::function<void(const PwNodeInfo&)> onEqForStream,
                               std::function<void(const PwNodeInfo&)> onVisualizeForStream,
+                              std::function<void(uint32_t, QSlider*, QLabel*, QCheckBox*)> registerControls,
                               QList<QPointer<LevelMeterWidget>>& meters,
                               QWidget* parent)
 {
@@ -437,7 +471,16 @@ QGroupBox* makeStreamsSection(const QString& title,
       onVisualize = [onVisualizeForStream, streamCopy]() { onVisualizeForStream(streamCopy); };
     }
 
-    v->addWidget(makeStreamRow(graph, pw, stream, controls, devices, std::move(onEq), std::move(onVisualize), meters, box));
+    v->addWidget(makeStreamRow(graph,
+                               pw,
+                               stream,
+                               controls,
+                               devices,
+                               std::move(onEq),
+                               std::move(onVisualize),
+                               registerControls,
+                               meters,
+                               box));
     ++count;
   }
 
