@@ -20,6 +20,10 @@ public slots:
   void setTapTarget(const QString& targetObject, bool captureSink);
   void applySettings(const VisualizerSettings& settings);
 
+protected:
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
+
 private:
   void repopulateSources();
 

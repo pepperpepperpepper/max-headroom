@@ -41,6 +41,9 @@ public:
   // Convenience method to update captureSink + targetObject with a single reconnect.
   void setTarget(bool captureSink, const QString& targetObject);
 
+  bool isEnabled() const { return m_enabled.load(std::memory_order_relaxed); }
+  void setEnabled(bool enabled);
+
   uint32_t sampleRate() const;
   void applySettings(const VisualizerSettings& settings);
 
@@ -76,6 +79,7 @@ private:
   pw_stream* m_stream = nullptr;
   spa_hook m_streamListener{};
 
+  std::atomic_bool m_enabled{true};
   std::atomic_bool m_captureSink{false};
   QString m_targetObject;
 

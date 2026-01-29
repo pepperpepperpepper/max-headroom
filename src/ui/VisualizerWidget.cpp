@@ -37,12 +37,32 @@ void VisualizerWidget::applySettings(const VisualizerSettings& settings)
 
   if (m_timer) {
     m_timer->setInterval(m_refreshIntervalMs);
-    if (!m_timer->isActive()) {
-      m_timer->start();
+    if (isVisible()) {
+      if (!m_timer->isActive()) {
+        m_timer->start();
+      }
+    } else {
+      m_timer->stop();
     }
   }
 
   update();
+}
+
+void VisualizerWidget::showEvent(QShowEvent* event)
+{
+  QWidget::showEvent(event);
+  if (m_timer && !m_timer->isActive()) {
+    m_timer->start(m_refreshIntervalMs);
+  }
+}
+
+void VisualizerWidget::hideEvent(QHideEvent* event)
+{
+  QWidget::hideEvent(event);
+  if (m_timer) {
+    m_timer->stop();
+  }
 }
 
 static void drawPanel(QPainter& p, const QRect& r, const QColor& top, const QColor& bottom)

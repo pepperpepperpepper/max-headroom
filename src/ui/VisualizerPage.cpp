@@ -125,6 +125,10 @@ VisualizerPage::VisualizerPage(PipeWireGraph* graph, AudioTap* tap, QWidget* par
     m_tap->setTarget(specOpt->captureSink, specOpt->targetObject);
   });
 
+  if (m_tap) {
+    m_tap->setEnabled(false);
+  }
+
   repopulateSources();
 }
 
@@ -135,6 +139,22 @@ void VisualizerPage::applySettings(const VisualizerSettings& settings)
   }
   if (m_widget) {
     m_widget->applySettings(settings);
+  }
+}
+
+void VisualizerPage::showEvent(QShowEvent* event)
+{
+  QWidget::showEvent(event);
+  if (m_tap) {
+    m_tap->setEnabled(true);
+  }
+}
+
+void VisualizerPage::hideEvent(QHideEvent* event)
+{
+  QWidget::hideEvent(event);
+  if (m_tap) {
+    m_tap->setEnabled(false);
   }
 }
 

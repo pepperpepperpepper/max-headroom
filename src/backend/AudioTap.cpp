@@ -173,6 +173,10 @@ void AudioTap::setTarget(bool captureSink, const QString& targetObject)
   m_captureSink.store(captureSink, std::memory_order_relaxed);
   m_targetObject = targetObject;
 
+  if (!m_enabled.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   if (!m_pw || !m_pw->isConnected()) {
     return;
   }
@@ -182,6 +186,32 @@ void AudioTap::setTarget(bool captureSink, const QString& targetObject)
   destroyStreamLocked();
   connectStreamLocked();
   pw_thread_loop_unlock(loop);
+}
+
+void AudioTap::setEnabled(bool enabled)
+{
+  const bool prev = m_enabled.exchange(enabled, std::memory_order_relaxed);
+  if (prev == enabled) {
+    return;
+  }
+
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
+    const QString msg = enabled ? QStringLiteral("unconnected") : QStringLiteral("disabled");
+    QMetaObject::invokeMethod(this, [this, msg]() { emit streamStateChanged(msg); }, Qt::QueuedConnection);
+    return;
+  }
+
+  pw_thread_loop* loop = m_pw->threadLoop();
+  pw_thread_loop_lock(loop);
+  if (enabled) {
+    connectStreamLocked();
+  } else {
+    destroyStreamLocked();
+  }
+  pw_thread_loop_unlock(loop);
+
+  const QString msg = enabled ? QStringLiteral("connecting") : QStringLiteral("disabled");
+  QMetaObject::invokeMethod(this, [this, msg]() { emit streamStateChanged(msg); }, Qt::QueuedConnection);
 }
 
 void AudioTap::connectStreamLocked()

@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class AudioTap;
+class QTimer;
 struct VisualizerSettings;
 
 class VisualizerWidget final : public QWidget
@@ -16,6 +17,8 @@ public slots:
   void applySettings(const VisualizerSettings& settings);
 
 protected:
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
 
 private:
