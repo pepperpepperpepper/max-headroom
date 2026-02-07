@@ -13,8 +13,20 @@
 #include <spa/pod/iter.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 using namespace pipewiregraph_internal;
+
+namespace {
+bool isInternalEphemeralNodeName(const QString& name)
+{
+  return name.startsWith(QStringLiteral("headroom.meter.")) || name == QStringLiteral("headroom.visualizer") ||
+      name == QStringLiteral("headroom.recorder");
+}
+} // namespace
 
 void PipeWireGraph::onRegistryGlobal(void* data,
                                      uint32_t id,
@@ -30,10 +42,89 @@ void PipeWireGraph::onRegistryGlobal(void* data,
 
   const QString iface = QString::fromUtf8(type);
 
+  static const bool debugRate = (std::getenv("HEADROOM_DEBUG_PW_RATE") != nullptr);
+  static std::atomic<uint64_t> s_calls{0};
+  static std::atomic<uint64_t> s_node{0};
+  static std::atomic<uint64_t> s_nodeHeadroom{0};
+  static std::atomic<uint64_t> s_nodeOther{0};
+  static std::atomic<uint64_t> s_nodeMeter{0};
+  static std::atomic<uint64_t> s_nodeVisualizer{0};
+  static std::atomic<uint64_t> s_nodeRecorder{0};
+  static std::atomic<uint64_t> s_nodeHeadroomDash{0};
+  static std::atomic<uint64_t> s_nodeAudioStim{0};
+  static std::atomic<uint64_t> s_port{0};
+  static std::atomic<uint64_t> s_link{0};
+  static std::atomic<uint64_t> s_module{0};
+  static std::atomic<uint64_t> s_metadata{0};
+  static std::atomic<uint64_t> s_profiler{0};
+  static std::atomic<uint64_t> s_other{0};
+  static std::atomic<int64_t> s_lastLogNs{0};
+
+  if (debugRate) {
+    s_calls.fetch_add(1, std::memory_order_relaxed);
+    if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Node)) {
+      s_node.fetch_add(1, std::memory_order_relaxed);
+    } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Port)) {
+      s_port.fetch_add(1, std::memory_order_relaxed);
+    } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Link)) {
+      s_link.fetch_add(1, std::memory_order_relaxed);
+    } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Module)) {
+      s_module.fetch_add(1, std::memory_order_relaxed);
+    } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Metadata)) {
+      s_metadata.fetch_add(1, std::memory_order_relaxed);
+    } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Profiler)) {
+      s_profiler.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      s_other.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    int64_t expected = s_lastLogNs.load(std::memory_order_relaxed);
+    if (expected <= 0 || nowNs - expected >= 1'000'000'000LL) {
+      if (s_lastLogNs.compare_exchange_strong(expected, nowNs)) {
+        const uint64_t calls = s_calls.exchange(0, std::memory_order_relaxed);
+        const uint64_t node = s_node.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeHeadroom = s_nodeHeadroom.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeOther = s_nodeOther.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeMeter = s_nodeMeter.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeVis = s_nodeVisualizer.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeRec = s_nodeRecorder.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeDash = s_nodeHeadroomDash.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeStim = s_nodeAudioStim.exchange(0, std::memory_order_relaxed);
+        const uint64_t port = s_port.exchange(0, std::memory_order_relaxed);
+        const uint64_t link = s_link.exchange(0, std::memory_order_relaxed);
+        const uint64_t mod = s_module.exchange(0, std::memory_order_relaxed);
+        const uint64_t meta = s_metadata.exchange(0, std::memory_order_relaxed);
+        const uint64_t prof = s_profiler.exchange(0, std::memory_order_relaxed);
+        const uint64_t other = s_other.exchange(0, std::memory_order_relaxed);
+        std::fprintf(stderr,
+                     "headroom: debug: pw registry global ~1s: calls=%llu node=%llu (headroom=%llu other=%llu meter=%llu visualizer=%llu recorder=%llu Headroom-=%llu AudioStim=%llu) port=%llu link=%llu module=%llu metadata=%llu profiler=%llu other=%llu\n",
+                     static_cast<unsigned long long>(calls),
+                     static_cast<unsigned long long>(node),
+                     static_cast<unsigned long long>(nodeHeadroom),
+                     static_cast<unsigned long long>(nodeOther),
+                     static_cast<unsigned long long>(nodeMeter),
+                     static_cast<unsigned long long>(nodeVis),
+                     static_cast<unsigned long long>(nodeRec),
+                     static_cast<unsigned long long>(nodeDash),
+                     static_cast<unsigned long long>(nodeStim),
+                     static_cast<unsigned long long>(port),
+                     static_cast<unsigned long long>(link),
+                     static_cast<unsigned long long>(mod),
+                     static_cast<unsigned long long>(meta),
+                     static_cast<unsigned long long>(prof),
+                     static_cast<unsigned long long>(other));
+      }
+    }
+  }
+
   uint32_t changeFlags = 0;
-  bool isNode = false;
+  bool wantBindNode = false;
   bool isMetadata = false;
   bool isProfiler = false;
+  bool wantBindProfiler = false;
   QString metadataName;
   {
     std::lock_guard<std::mutex> lock(self->m_mutex);
@@ -55,9 +146,38 @@ void PipeWireGraph::onRegistryGlobal(void* data,
       if (node.description.isEmpty()) {
         node.description = node.name;
       }
+      const bool internal = isInternalEphemeralNodeName(node.name);
       self->m_nodes.insert(id, node);
-      changeFlags |= ChangeTopology;
-      isNode = true;
+      if (internal) {
+        self->m_internalEphemeralNodeIds.insert(id);
+        wantBindNode = false;
+      } else {
+        self->m_internalEphemeralNodeIds.remove(id);
+        changeFlags |= ChangeTopology;
+        wantBindNode = true;
+      }
+
+      if (debugRate) {
+        // Best-effort: count Headroom's own helper nodes separately, so we can
+        // spot accidental node churn even when meters/visualizer are off.
+        if (node.name.startsWith(QStringLiteral("headroom.")) || node.name.startsWith(QStringLiteral("Headroom-"))) {
+          s_nodeHeadroom.fetch_add(1, std::memory_order_relaxed);
+          if (node.name.startsWith(QStringLiteral("headroom.meter."))) {
+            s_nodeMeter.fetch_add(1, std::memory_order_relaxed);
+          } else if (node.name == QStringLiteral("headroom.visualizer")) {
+            s_nodeVisualizer.fetch_add(1, std::memory_order_relaxed);
+          } else if (node.name == QStringLiteral("headroom.recorder")) {
+            s_nodeRecorder.fetch_add(1, std::memory_order_relaxed);
+          } else if (node.name.startsWith(QStringLiteral("Headroom-"))) {
+            s_nodeHeadroomDash.fetch_add(1, std::memory_order_relaxed);
+            if (node.name == QStringLiteral("Headroom-AudioStim")) {
+              s_nodeAudioStim.fetch_add(1, std::memory_order_relaxed);
+            }
+          }
+        } else {
+          s_nodeOther.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Port)) {
       PwPortInfo port;
       port.id = id;
@@ -76,7 +196,13 @@ void PipeWireGraph::onRegistryGlobal(void* data,
         port.alias = port.name;
       }
       self->m_ports.insert(id, port);
-      changeFlags |= ChangeTopology;
+      const bool internal = (port.nodeId != 0 && self->m_internalEphemeralNodeIds.contains(port.nodeId));
+      if (internal) {
+        self->m_internalEphemeralPortIds.insert(id);
+      } else {
+        self->m_internalEphemeralPortIds.remove(id);
+        changeFlags |= ChangeTopology;
+      }
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Link)) {
       PwLinkInfo link;
       link.id = id;
@@ -85,7 +211,15 @@ void PipeWireGraph::onRegistryGlobal(void* data,
       link.inputNodeId = dictU32(props, PW_KEY_LINK_INPUT_NODE).value_or(0);
       link.inputPortId = dictU32(props, PW_KEY_LINK_INPUT_PORT).value_or(0);
       self->m_links.insert(id, link);
-      changeFlags |= ChangeTopology;
+      const bool internal =
+          (link.outputNodeId != 0 && self->m_internalEphemeralNodeIds.contains(link.outputNodeId)) ||
+          (link.inputNodeId != 0 && self->m_internalEphemeralNodeIds.contains(link.inputNodeId));
+      if (internal) {
+        self->m_internalEphemeralLinkIds.insert(id);
+      } else {
+        self->m_internalEphemeralLinkIds.remove(id);
+        changeFlags |= ChangeTopology;
+      }
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Module)) {
       PwModuleInfo m;
       m.id = id;
@@ -104,18 +238,20 @@ void PipeWireGraph::onRegistryGlobal(void* data,
         isMetadata = true;
       }
     } else if (iface == QString::fromUtf8(PW_TYPE_INTERFACE_Profiler)) {
+      self->m_profilerId = id;
       changeFlags |= ChangeTopology;
       isProfiler = true;
+      wantBindProfiler = self->m_profilerEnabledWanted;
     }
   }
 
-  if (isNode) {
+  if (wantBindNode) {
     self->bindNode(id);
   }
   if (isMetadata) {
     self->bindMetadata(id, metadataName);
   }
-  if (isProfiler) {
+  if (isProfiler && wantBindProfiler) {
     self->bindProfiler(id);
   }
 
@@ -128,31 +264,164 @@ void PipeWireGraph::onRegistryGlobalRemove(void* data, uint32_t id)
 {
   auto* self = static_cast<PipeWireGraph*>(data);
 
+  static const bool debugRate = (std::getenv("HEADROOM_DEBUG_PW_RATE") != nullptr);
+  if (debugRate) {
+    static std::atomic<uint64_t> s_calls{0};
+    static std::atomic<uint64_t> s_node{0};
+    static std::atomic<uint64_t> s_nodeHeadroom{0};
+    static std::atomic<uint64_t> s_nodeOther{0};
+    static std::atomic<uint64_t> s_nodeMeter{0};
+    static std::atomic<uint64_t> s_nodeVisualizer{0};
+    static std::atomic<uint64_t> s_nodeRecorder{0};
+    static std::atomic<uint64_t> s_nodeHeadroomDash{0};
+    static std::atomic<uint64_t> s_nodeAudioStim{0};
+    static std::atomic<uint64_t> s_port{0};
+    static std::atomic<uint64_t> s_link{0};
+    static std::atomic<uint64_t> s_module{0};
+    static std::atomic<uint64_t> s_metadata{0};
+    static std::atomic<uint64_t> s_profiler{0};
+    static std::atomic<uint64_t> s_other{0};
+    static std::atomic<int64_t> s_lastLogNs{0};
+
+    bool counted = false;
+    {
+      std::lock_guard<std::mutex> lock(self->m_mutex);
+      if (self->m_links.contains(id)) {
+        s_link.fetch_add(1, std::memory_order_relaxed);
+        counted = true;
+      } else if (self->m_ports.contains(id)) {
+        s_port.fetch_add(1, std::memory_order_relaxed);
+        counted = true;
+      } else if (self->m_modules.contains(id)) {
+        s_module.fetch_add(1, std::memory_order_relaxed);
+        counted = true;
+      } else if (self->m_nodes.contains(id)) {
+        const QString name = self->m_nodes.value(id).name;
+        s_node.fetch_add(1, std::memory_order_relaxed);
+        if (name.startsWith(QStringLiteral("headroom.")) || name.startsWith(QStringLiteral("Headroom-"))) {
+          s_nodeHeadroom.fetch_add(1, std::memory_order_relaxed);
+          if (name.startsWith(QStringLiteral("headroom.meter."))) {
+            s_nodeMeter.fetch_add(1, std::memory_order_relaxed);
+          } else if (name == QStringLiteral("headroom.visualizer")) {
+            s_nodeVisualizer.fetch_add(1, std::memory_order_relaxed);
+          } else if (name == QStringLiteral("headroom.recorder")) {
+            s_nodeRecorder.fetch_add(1, std::memory_order_relaxed);
+          } else if (name.startsWith(QStringLiteral("Headroom-"))) {
+            s_nodeHeadroomDash.fetch_add(1, std::memory_order_relaxed);
+            if (name == QStringLiteral("Headroom-AudioStim")) {
+              s_nodeAudioStim.fetch_add(1, std::memory_order_relaxed);
+            }
+          }
+        } else {
+          s_nodeOther.fetch_add(1, std::memory_order_relaxed);
+        }
+        counted = true;
+      } else if (self->m_metadataBindings.contains(id)) {
+        s_metadata.fetch_add(1, std::memory_order_relaxed);
+        counted = true;
+      } else if (self->m_profilerId.has_value() && self->m_profilerId.value() == id) {
+        s_profiler.fetch_add(1, std::memory_order_relaxed);
+        counted = true;
+      }
+    }
+    if (!counted) {
+      s_other.fetch_add(1, std::memory_order_relaxed);
+    }
+    s_calls.fetch_add(1, std::memory_order_relaxed);
+
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    int64_t expected = s_lastLogNs.load(std::memory_order_relaxed);
+    if (expected <= 0 || nowNs - expected >= 1'000'000'000LL) {
+      if (s_lastLogNs.compare_exchange_strong(expected, nowNs)) {
+        const uint64_t calls = s_calls.exchange(0, std::memory_order_relaxed);
+        const uint64_t node = s_node.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeHeadroom = s_nodeHeadroom.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeOther = s_nodeOther.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeMeter = s_nodeMeter.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeVis = s_nodeVisualizer.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeRec = s_nodeRecorder.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeDash = s_nodeHeadroomDash.exchange(0, std::memory_order_relaxed);
+        const uint64_t nodeStim = s_nodeAudioStim.exchange(0, std::memory_order_relaxed);
+        const uint64_t port = s_port.exchange(0, std::memory_order_relaxed);
+        const uint64_t link = s_link.exchange(0, std::memory_order_relaxed);
+        const uint64_t mod = s_module.exchange(0, std::memory_order_relaxed);
+        const uint64_t meta = s_metadata.exchange(0, std::memory_order_relaxed);
+        const uint64_t prof = s_profiler.exchange(0, std::memory_order_relaxed);
+        const uint64_t other = s_other.exchange(0, std::memory_order_relaxed);
+        std::fprintf(stderr,
+                     "headroom: debug: pw registry global_remove ~1s: calls=%llu node=%llu (headroom=%llu other=%llu meter=%llu visualizer=%llu recorder=%llu Headroom-=%llu AudioStim=%llu) port=%llu link=%llu module=%llu metadata=%llu profiler=%llu other=%llu\n",
+                     static_cast<unsigned long long>(calls),
+                     static_cast<unsigned long long>(node),
+                     static_cast<unsigned long long>(nodeHeadroom),
+                     static_cast<unsigned long long>(nodeOther),
+                     static_cast<unsigned long long>(nodeMeter),
+                     static_cast<unsigned long long>(nodeVis),
+                     static_cast<unsigned long long>(nodeRec),
+                     static_cast<unsigned long long>(nodeDash),
+                     static_cast<unsigned long long>(nodeStim),
+                     static_cast<unsigned long long>(port),
+                     static_cast<unsigned long long>(link),
+                     static_cast<unsigned long long>(mod),
+                     static_cast<unsigned long long>(meta),
+                     static_cast<unsigned long long>(prof),
+                     static_cast<unsigned long long>(other));
+      }
+    }
+  }
+
   uint32_t changeFlags = 0;
   bool removedNode = false;
   bool removedMetadata = false;
   bool removedProfiler = false;
   {
     std::lock_guard<std::mutex> lock(self->m_mutex);
+    const bool internalLink = self->m_internalEphemeralLinkIds.contains(id);
     if (self->m_links.remove(id) > 0) {
-      changeFlags |= ChangeTopology;
+      if (!internalLink) {
+        changeFlags |= ChangeTopology;
+      }
     }
+    self->m_internalEphemeralLinkIds.remove(id);
+
+    const bool internalPort = self->m_internalEphemeralPortIds.contains(id);
     if (self->m_ports.remove(id) > 0) {
-      changeFlags |= ChangeTopology;
+      if (!internalPort) {
+        changeFlags |= ChangeTopology;
+      }
     }
+    self->m_internalEphemeralPortIds.remove(id);
+
     if (self->m_modules.remove(id) > 0) {
       changeFlags |= ChangeTopology;
     }
-    if (self->m_nodes.remove(id) > 0) {
-      changeFlags |= ChangeTopology;
+
+    bool internalNode = self->m_internalEphemeralNodeIds.contains(id);
+    if (self->m_nodes.contains(id)) {
+      const QString name = self->m_nodes.value(id).name;
+      internalNode = internalNode || isInternalEphemeralNodeName(name);
+      self->m_nodes.remove(id);
+      if (!internalNode) {
+        changeFlags |= ChangeTopology;
+      }
       removedNode = true;
     }
+    self->m_internalEphemeralNodeIds.remove(id);
+
     if (self->m_nodeControls.remove(id) > 0) {
-      changeFlags |= ChangeTopology;
+      if (!internalNode) {
+        changeFlags |= ChangeTopology;
+      }
     }
+
     if (self->m_metadataBindings.contains(id)) {
       changeFlags |= ChangeMetadata;
       removedMetadata = true;
+    }
+    if (self->m_profilerId.has_value() && self->m_profilerId.value() == id) {
+      self->m_profilerId.reset();
+      changeFlags |= ChangeTopology;
     }
     if (self->m_profilerBinding && self->m_profilerBinding->profilerId == id) {
       changeFlags |= ChangeTopology;
@@ -209,6 +478,30 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   }
   if (id != SPA_PARAM_Props) {
     return;
+  }
+
+  static const bool debugRate = (std::getenv("HEADROOM_DEBUG_PW_RATE") != nullptr);
+  static std::atomic<uint64_t> s_calls{0};
+  static std::atomic<uint64_t> s_changed{0};
+  static std::atomic<int64_t> s_lastLogNs{0};
+
+  if (debugRate) {
+    s_calls.fetch_add(1, std::memory_order_relaxed);
+
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    int64_t expected = s_lastLogNs.load(std::memory_order_relaxed);
+    if (expected <= 0 || nowNs - expected >= 1'000'000'000LL) {
+      if (s_lastLogNs.compare_exchange_strong(expected, nowNs)) {
+        const uint64_t calls = s_calls.exchange(0, std::memory_order_relaxed);
+        const uint64_t changed = s_changed.exchange(0, std::memory_order_relaxed);
+        std::fprintf(stderr,
+                     "headroom: debug: pw onNodeParam(Props) ~1s: calls=%llu changed=%llu\n",
+                     static_cast<unsigned long long>(calls),
+                     static_cast<unsigned long long>(changed));
+      }
+    }
   }
 
   // Nodes may expose multiple Props params, and some of them don't include
@@ -292,6 +585,9 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   }
 
   if (changed) {
+    if (debugRate) {
+      s_changed.fetch_add(1, std::memory_order_relaxed);
+    }
     binding->graph->scheduleGraphChanged(ChangeNodeControls);
   }
 }
@@ -437,6 +733,11 @@ void PipeWireGraph::unbindMetadata(uint32_t id)
       m_configuredAudioSinkId.reset();
       m_defaultAudioSourceId.reset();
       m_configuredAudioSourceId.reset();
+      m_defaultAudioSinkName.clear();
+      m_configuredAudioSinkName.clear();
+      m_defaultAudioSourceName.clear();
+      m_configuredAudioSourceName.clear();
+      m_defaultDevicesPreferJson = false;
     }
     if (removedSettings) {
       m_clockRate.reset();

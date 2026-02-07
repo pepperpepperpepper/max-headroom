@@ -6,6 +6,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${1:-$ROOT/screenshots}"
 mkdir -p "$OUT_DIR"
 
+DEFAULT_HEADROOM_BIN="$ROOT/build/headroom"
+DEFAULT_HEADROOMCTL_BIN="$ROOT/build/headroomctl"
+HEADROOM_BIN="${HEADROOM_BIN:-$DEFAULT_HEADROOM_BIN}"
+HEADROOMCTL_BIN="${HEADROOMCTL_BIN:-$DEFAULT_HEADROOMCTL_BIN}"
+
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing dependency: $1" >&2
@@ -50,8 +55,14 @@ cleanup() {
 trap cleanup EXIT
 
 maybe_build() {
-  if [[ -x "$ROOT/build/headroom" && -x "$ROOT/build/headroomctl" ]]; then
+  if [[ -x "$HEADROOM_BIN" && -x "$HEADROOMCTL_BIN" ]]; then
     return 0
+  fi
+  if [[ "$HEADROOM_BIN" != "$DEFAULT_HEADROOM_BIN" || "$HEADROOMCTL_BIN" != "$DEFAULT_HEADROOMCTL_BIN" ]]; then
+    echo "Missing required build outputs:" >&2
+    echo "  HEADROOM_BIN=$HEADROOM_BIN" >&2
+    echo "  HEADROOMCTL_BIN=$HEADROOMCTL_BIN" >&2
+    exit 1
   fi
   echo "info: missing ./build outputs; building first" >&2
   cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
@@ -132,18 +143,18 @@ XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0-manager -n default 0 de
 XDG_RUNTIME_DIR="$RUNTIME_DIR" pw-metadata -r pipewire-0-manager -n default 0 default.configured.audio.sink "$SINK_ID" Spa:Id >/dev/null 2>&1 || true
 
 # Seed a profile so the tray menu's Profiles submenu is non-empty.
-XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" patchbay save testprofile >/dev/null 2>&1 || true
-XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" patchbay apply testprofile >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" "$HEADROOMCTL_BIN" patchbay save testprofile >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" "$HEADROOMCTL_BIN" patchbay apply testprofile >/dev/null 2>&1 || true
 
 # Start from a known state (retry: headroomctl may race initial graph discovery).
 for _ in $(seq 1 40); do
-  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" set-volume "$SINK_ID" 100% >/dev/null 2>&1; then
+  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$HEADROOMCTL_BIN" set-volume "$SINK_ID" 100% >/dev/null 2>&1; then
     break
   fi
   sleep 0.1
 done
 for _ in $(seq 1 40); do
-  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" mute "$SINK_ID" off >/dev/null 2>&1; then
+  if XDG_RUNTIME_DIR="$RUNTIME_DIR" "$HEADROOMCTL_BIN" mute "$SINK_ID" off >/dev/null 2>&1; then
     break
   fi
   sleep 0.1
@@ -158,6 +169,8 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
   XDG_CACHE_HOME="$XDG_CACHE_HOME" \
   QT_QPA_PLATFORM="${QT_QPA_PLATFORM_TRAY:-xcb}" \
   ROOT="$ROOT" \
+  HEADROOM_BIN="$HEADROOM_BIN" \
+  HEADROOMCTL_BIN="$HEADROOMCTL_BIN" \
   OUT_DIR="$OUT_DIR" \
   SINK_ID="$SINK_ID" \
   bash -lc '
@@ -338,7 +351,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       local tries="$1"
       shift
       for _ in $(seq 1 "$tries"); do
-        if XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" "$@" >/dev/null 2>&1; then
+        if XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" "$@" >/dev/null 2>&1; then
           return 0
         fi
         sleep 0.1
@@ -351,7 +364,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       for _ in $(seq 1 60); do
         local pct
         pct="$(
-          XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks --json 2>/dev/null \
+          XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks --json 2>/dev/null \
             | jq -r --argjson id "$SINK_ID" '"'"'.[] | select(.id==$id) | (.controls.volume*100 | round)'"'"' \
             | head -n 1
         )"
@@ -373,7 +386,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
     # Give the tray time to claim the system-tray selection.
     sleep 0.35
 
-    "$ROOT/build/headroom" &
+    "$HEADROOM_BIN" &
     HEADROOM_PID=$!
 
     # Wait for the main window to appear, then close it to hide-to-tray.
@@ -429,7 +442,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
     fi
     if ! wait_sink_volume_pct 30; then
       echo "warn: sink $SINK_ID did not report 30% within timeout (continuing)" >&2
-      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
     menu_set_slider_pct 30 || true
@@ -444,7 +457,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
     fi
     if ! wait_sink_volume_pct 80; then
       echo "warn: sink $SINK_ID did not report 80% within timeout (continuing)" >&2
-      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$ROOT/build/headroomctl" sinks >&2 || true
+      XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
     menu_set_slider_pct 80 || true

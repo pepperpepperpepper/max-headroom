@@ -14,6 +14,9 @@ class QPushButton;
 class QSlider;
 class QLabel;
 class QCheckBox;
+class QShowEvent;
+class QHideEvent;
+class QEvent;
 class PipeWireGraph;
 class EqManager;
 class PipeWireThread;
@@ -26,16 +29,38 @@ class MixerPage final : public QWidget
 public:
   explicit MixerPage(PipeWireThread* pw, PipeWireGraph* graph, EqManager* eq, QWidget* parent = nullptr);
 
+protected:
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
+
 signals:
   void visualizerTapRequested(QString targetObject, bool captureSink);
 
 public slots:
   void refresh();
+  void updateForWindowVisibilityChange();
 
-private:
-  void scheduleRebuild();
-  void refreshControls();
-  void rebuild();
+  private:
+    enum class MeterMode {
+      Off = 0,
+      SelectedOnly = 1,
+      VisibleRows = 2,
+      All = 3,
+    };
+
+    void disableAllMeters();
+    void loadMeterMode();
+    enum class MeterStyle {
+      SimplePeak = 0,
+      DetailedPeakRms = 1,
+    };
+    void loadMeterStyle();
+    void applyMeterStyle();
+    void updateMeterActives();
+    void scheduleRebuild();
+    void refreshControls();
+    void rebuild();
   void tickMeters();
 
   PipeWireThread* m_pw = nullptr;
@@ -46,11 +71,18 @@ private:
   QPushButton* m_setDefaultOutput = nullptr;
   QComboBox* m_defaultInput = nullptr;
   QPushButton* m_setDefaultInput = nullptr;
+  QComboBox* m_meterMode = nullptr;
+  QComboBox* m_meterStyle = nullptr;
   QScrollArea* m_scroll = nullptr;
   QWidget* m_container = nullptr;
   QTimer* m_rebuildTimer = nullptr;
   QTimer* m_meterTimer = nullptr;
   QList<QPointer<LevelMeterWidget>> m_meters;
+  MeterMode m_meterModeValue = MeterMode::VisibleRows;
+  MeterStyle m_meterStyleValue = MeterStyle::SimplePeak;
+  QPointer<QWidget> m_selectedRow;
+  bool m_pendingRebuild = false;
+  bool m_windowFilterInstalled = false;
 
   QHash<uint32_t, QPointer<QSlider>> m_volumeSliders;
   QHash<uint32_t, QPointer<QLabel>> m_volumePcts;

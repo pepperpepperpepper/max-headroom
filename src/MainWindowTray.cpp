@@ -24,12 +24,14 @@
 #include "settings/SettingsKeys.h"
 #include "ui/MixerPage.h"
 #include "ui/PatchbayPage.h"
+#include "ui/WindowVisibility.h"
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
   if (m_tray && !m_trayExitRequested) {
     event->ignore();
     hide();
+    QTimer::singleShot(0, this, &MainWindow::updateLowPowerMode);
 
     QSettings s;
     const bool alreadyNotified = s.value(QStringLiteral("tray/closeNotified"), false).toBool();
@@ -115,6 +117,7 @@ void MainWindow::setupTray()
   m_trayRefreshTimer = new QTimer(this);
   m_trayRefreshTimer->setSingleShot(true);
   m_trayRefreshTimer->setInterval(120);
+  m_trayRefreshTimer->setTimerType(Qt::CoarseTimer);
   connect(m_trayRefreshTimer, &QTimer::timeout, this, &MainWindow::refreshTrayUi);
 
   if (m_graph) {
@@ -143,6 +146,14 @@ uint32_t MainWindow::trayOutputNodeId() const
 void MainWindow::scheduleTrayRefresh()
 {
   if (m_trayRefreshTimer) {
+    // Avoid background wakeups when running tray-only: update eagerly while the window is
+    // shown or while the tray menu is open, but otherwise rely on aboutToShow refresh.
+    const bool windowActive = WindowVisibility::isActive(this);
+    const bool menuActive = (m_trayMenu && m_trayMenu->isVisible())
+        || (m_trayProfilesMenu && m_trayProfilesMenu->isVisible());
+    if (!windowActive && !menuActive) {
+      return;
+    }
     m_trayRefreshTimer->start();
   }
 }
@@ -358,4 +369,3 @@ void MainWindow::requestExitFromTray()
   }
   qApp->quit();
 }
-

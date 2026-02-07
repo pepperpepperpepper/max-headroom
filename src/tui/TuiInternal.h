@@ -14,6 +14,7 @@
 #include <QVector>
 
 #include <optional>
+#include <cstdint>
 
 class QCoreApplication;
 class EqManager;
@@ -51,6 +52,13 @@ enum class PortKind {
   Audio,
   Midi,
   Other,
+};
+
+struct VolumeOverride final {
+  float value = 1.0f;
+  int64_t lastInputMs = 0;
+  int64_t lastSendMs = 0;
+  bool dirty = false;
 };
 
 PortKind portKindFor(const PwPortInfo& p, const QHash<uint32_t, PwNodeInfo>& nodesById);
@@ -113,6 +121,7 @@ void drawListPage(const char* title,
                   PipeWireGraph* graph,
                   int& selectedIdx,
                   std::optional<uint32_t> defaultNodeId,
+                  const QHash<uint32_t, VolumeOverride>* volumeOverrides,
                   int height,
                   int width);
 void drawEqPage(PipeWireGraph* graph, EqManager* eq, int& selectedIdx, const QString& statusLine, int height, int width);
@@ -126,11 +135,15 @@ void drawRecordingPage(PipeWireGraph* graph,
                        const QString& statusLine,
                        int height,
                        int width);
-void drawStreamsPage(PipeWireGraph* graph, int& selectedIdx, int height, int width);
+void drawStreamsPage(const QList<PwNodeInfo>& streams,
+                     PipeWireGraph* graph,
+                     int& selectedIdx,
+                     const QHash<uint32_t, VolumeOverride>* volumeOverrides,
+                     int height,
+                     int width);
 void drawPatchbayPage(PipeWireGraph* graph, int& selectedLinkIdx, const QString& statusLine, int height, int width);
 void drawStatusPage(PipeWireGraph* graph, int& selectedIdx, int height, int width);
 void drawEnginePage(const QList<SystemdUnitStatus>& units, int& selectedIdx, const QString& engineStatus, int height, int width);
 
 int runTui(QCoreApplication& app, QStringList args);
 } // namespace headroomtui
-

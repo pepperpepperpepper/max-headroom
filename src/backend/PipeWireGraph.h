@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <QSet>
 #include <QString>
 
 #include <atomic>
@@ -137,6 +138,8 @@ public:
   bool hasDefaultDeviceSupport() const;
   std::optional<uint32_t> defaultAudioSinkId() const;
   std::optional<uint32_t> defaultAudioSourceId() const;
+  std::optional<uint32_t> configuredAudioSinkId() const;
+  std::optional<uint32_t> configuredAudioSourceId() const;
   bool setDefaultAudioSink(uint32_t nodeId);
   bool setDefaultAudioSource(uint32_t nodeId);
 
@@ -152,6 +155,7 @@ public:
   bool setClockMaxQuantum(std::optional<uint32_t> quantum);
 
   bool hasProfilerSupport() const;
+  void setProfilerEnabled(bool enabled);
   std::optional<PwProfilerSnapshot> profilerSnapshot() const;
 
   bool setNodeVolume(uint32_t nodeId, float volume);
@@ -210,15 +214,27 @@ private:
   QHash<uint32_t, PwModuleInfo> m_modules;
   QHash<uint32_t, PwNodeControls> m_nodeControls;
 
+  // Internal helper nodes (meters/visualizer/recorder) can cause a lot of churn in the
+  // PipeWire registry. We keep them in the graph so self-tests can observe them, but we
+  // avoid emitting topologyChanged for them so UI pages don't rebuild in a tight loop.
+  QSet<uint32_t> m_internalEphemeralNodeIds;
+  QSet<uint32_t> m_internalEphemeralPortIds;
+  QSet<uint32_t> m_internalEphemeralLinkIds;
+
   QHash<uint32_t, NodeBinding*> m_nodeBindings;
   QHash<uint32_t, MetadataBinding*> m_metadataBindings;
   MetadataBinding* m_defaultDeviceMetadata = nullptr;
   MetadataBinding* m_settingsMetadata = nullptr;
   ProfilerBinding* m_profilerBinding = nullptr;
+  bool m_defaultDevicesPreferJson = false;
   std::optional<uint32_t> m_defaultAudioSinkId;
   std::optional<uint32_t> m_configuredAudioSinkId;
   std::optional<uint32_t> m_defaultAudioSourceId;
   std::optional<uint32_t> m_configuredAudioSourceId;
+  QString m_defaultAudioSinkName;
+  QString m_configuredAudioSinkName;
+  QString m_defaultAudioSourceName;
+  QString m_configuredAudioSourceName;
 
   std::optional<uint32_t> m_clockRate;
   QVector<uint32_t> m_clockAllowedRates;
@@ -228,6 +244,8 @@ private:
   std::optional<uint32_t> m_clockForceRate;
   std::optional<uint32_t> m_clockForceQuantum;
 
+  std::optional<uint32_t> m_profilerId;
+  bool m_profilerEnabledWanted = true;
   std::optional<PwProfilerSnapshot> m_profilerSnapshot;
 
   // We keep proxies for links we create so the server-side resource stays alive

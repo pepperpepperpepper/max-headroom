@@ -63,8 +63,14 @@ void MainWindow::openSessions()
 
 void MainWindow::openEngine()
 {
+  m_profilerRequested = true;
+  updateLowPowerMode();
+
   EngineDialog dlg(m_graph, this);
   dlg.exec();
+
+  m_profilerRequested = false;
+  updateLowPowerMode();
 }
 
 void MainWindow::openRecorder()
@@ -82,4 +88,3 @@ void MainWindow::openLogs()
   dlg->setAttribute(Qt::WA_DeleteOnClose);
   dlg->show();
 }
-

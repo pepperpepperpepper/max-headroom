@@ -1,13 +1,19 @@
 #include "MainWindow.h"
 
+#include <QAbstractNativeEventFilter>
 #include <QAction>
 #include <QApplication>
 #include <QIcon>
 #include <QKeySequence>
 #include <QCoreApplication>
+#include <QEvent>
+#include <QHideEvent>
 #include <QSettings>
+#include <QShowEvent>
 #include <QTabWidget>
 #include <QToolBar>
+#include <QTimer>
+#include <QWindow>
 
 #include "backend/AudioRecorder.h"
 #include "backend/AudioTap.h"
@@ -22,6 +28,62 @@
 #include "ui/MixerPage.h"
 #include "ui/PatchbayPage.h"
 #include "ui/VisualizerPage.h"
+#include "ui/WindowVisibility.h"
+
+#if QT_CONFIG(xcb)
+#include <xcb/xcb.h>
+#endif
+
+class MainWindowX11MapEventFilter final : public QAbstractNativeEventFilter
+{
+public:
+  explicit MainWindowX11MapEventFilter(MainWindow* w)
+      : m_window(w)
+  {
+  }
+
+  void setWindowId(WId id) { m_windowId = id; }
+
+  bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override
+  {
+    Q_UNUSED(result);
+#if QT_CONFIG(xcb)
+    if (!m_window || m_windowId == 0) {
+      return false;
+    }
+    if (!eventType.startsWith("xcb") || !message) {
+      return false;
+    }
+
+    const auto* ev = static_cast<const xcb_generic_event_t*>(message);
+    const uint8_t type = ev->response_type & ~0x80;
+    if (type != XCB_MAP_NOTIFY && type != XCB_UNMAP_NOTIFY && type != XCB_DESTROY_NOTIFY) {
+      return false;
+    }
+
+    xcb_window_t win = 0;
+    if (type == XCB_MAP_NOTIFY) {
+      win = reinterpret_cast<const xcb_map_notify_event_t*>(ev)->window;
+    } else if (type == XCB_UNMAP_NOTIFY) {
+      win = reinterpret_cast<const xcb_unmap_notify_event_t*>(ev)->window;
+    } else if (type == XCB_DESTROY_NOTIFY) {
+      win = reinterpret_cast<const xcb_destroy_notify_event_t*>(ev)->window;
+    }
+
+    if (static_cast<WId>(win) == m_windowId) {
+      m_window->scheduleLowPowerModeUpdate();
+    }
+#else
+    Q_UNUSED(eventType);
+    Q_UNUSED(message);
+#endif
+    return false;
+  }
+
+private:
+  MainWindow* m_window = nullptr;
+  WId m_windowId = 0;
+};
 
 MainWindow::MainWindow(LogStore* logs, QWidget* parent)
     : QMainWindow(parent)
@@ -100,6 +162,50 @@ MainWindow::MainWindow(LogStore* logs, QWidget* parent)
 
   setupTray();
 
+  if (QGuiApplication::platformName() == QStringLiteral("xcb")) {
+    auto f = std::make_unique<MainWindowX11MapEventFilter>(this);
+    f->setWindowId(winId());
+    m_nativeEventFilter = std::move(f);
+    qApp->installNativeEventFilter(m_nativeEventFilter.get());
+  }
+
+  // Some X11 environments used for host testing can map/unmap the native window without Qt
+  // delivering the expected QWidget show/hide transitions. Initialize and hook low-power mode
+  // once the event loop starts, even if showEvent() doesn't fire as expected.
+  QTimer::singleShot(0, this, [this]() {
+    if (QGuiApplication::platformName() == QStringLiteral("xcb")) {
+#if QT_CONFIG(xcb)
+      auto* x11 = qGuiApp ? qGuiApp->nativeInterface<QNativeInterface::QX11Application>() : nullptr;
+      xcb_connection_t* conn = x11 ? x11->connection() : nullptr;
+      const WId wid = winId();
+      if (conn && wid != 0) {
+        const xcb_window_t win = static_cast<xcb_window_t>(wid);
+        const xcb_get_window_attributes_cookie_t cookie = xcb_get_window_attributes(conn, win);
+        xcb_get_window_attributes_reply_t* reply = xcb_get_window_attributes_reply(conn, cookie, nullptr);
+        if (reply) {
+          const uint32_t want = reply->your_event_mask | XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE;
+          std::free(reply);
+          const uint32_t values[] = {want};
+          xcb_change_window_attributes(conn, win, XCB_CW_EVENT_MASK, values);
+          xcb_flush(conn);
+        }
+      }
+#endif
+
+      if (auto* f = dynamic_cast<MainWindowX11MapEventFilter*>(m_nativeEventFilter.get())) {
+        f->setWindowId(winId());
+      }
+    }
+    if (!m_windowHandleHooked) {
+      if (QWindow* w = windowHandle()) {
+        m_windowHandleHooked = true;
+        connect(w, &QWindow::visibilityChanged, this, [this](QWindow::Visibility) { updateLowPowerMode(); });
+        connect(w, &QWindow::visibleChanged, this, [this](bool) { updateLowPowerMode(); });
+      }
+    }
+    updateLowPowerMode();
+  });
+
   connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
     QSettings s;
     const QString active = s.value(SettingsKeys::patchbayActiveProfileName()).toString().trimmed();
@@ -119,6 +225,72 @@ MainWindow::MainWindow(LogStore* logs, QWidget* parent)
   });
 }
 
+MainWindow::~MainWindow()
+{
+  if (m_nativeEventFilter) {
+    qApp->removeNativeEventFilter(m_nativeEventFilter.get());
+    m_nativeEventFilter.reset();
+  }
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+  QMainWindow::showEvent(event);
+
+  // On some X11 setups, the native window may be mapped/unmapped without Qt delivering the
+  // expected QWidget show/hide transitions. Track QWindow visibility changes so low-power
+  // behavior (meters/visualizer/profiler) stays in sync with the actual on-screen state.
+  if (!m_windowHandleHooked) {
+    if (QWindow* w = windowHandle()) {
+      m_windowHandleHooked = true;
+      connect(w, &QWindow::visibilityChanged, this, [this](QWindow::Visibility) { updateLowPowerMode(); });
+      connect(w, &QWindow::visibleChanged, this, [this](bool) { updateLowPowerMode(); });
+    }
+  }
+
+  updateLowPowerMode();
+}
+
+void MainWindow::hideEvent(QHideEvent* event)
+{
+  QMainWindow::hideEvent(event);
+  updateLowPowerMode();
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+  QMainWindow::changeEvent(event);
+  if (event && event->type() == QEvent::WindowStateChange) {
+    updateLowPowerMode();
+  }
+}
+
+void MainWindow::scheduleLowPowerModeUpdate()
+{
+  if (m_lowPowerUpdatePending) {
+    return;
+  }
+  m_lowPowerUpdatePending = true;
+  QTimer::singleShot(0, this, [this]() {
+    m_lowPowerUpdatePending = false;
+    updateLowPowerMode();
+  });
+}
+
+void MainWindow::updateLowPowerMode()
+{
+  if (!m_graph) {
+    return;
+  }
+
+  const bool enableProfiler = WindowVisibility::isActive(this) && m_profilerRequested;
+  m_graph->setProfilerEnabled(enableProfiler);
+
+  if (m_mixerPage) {
+    QTimer::singleShot(0, m_mixerPage, &MixerPage::updateForWindowVisibilityChange);
+  }
+}
+
 void MainWindow::setVisualizerTapTarget(const QString& targetObject, bool captureSink)
 {
   if (m_visualizerPage) {
@@ -127,8 +299,6 @@ void MainWindow::setVisualizerTapTarget(const QString& targetObject, bool captur
     m_tap->setTarget(captureSink, targetObject);
   }
 }
-
-MainWindow::~MainWindow() = default;
 
 bool MainWindow::selectTabByKey(const QString& key)
 {

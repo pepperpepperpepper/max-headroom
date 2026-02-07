@@ -12,6 +12,7 @@
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainterPath>
+#include <QTimer>
 #include <QToolTip>
 #include <QTransform>
 
@@ -19,6 +20,18 @@ using namespace patchbayui;
 
 bool PatchbayPage::eventFilter(QObject* obj, QEvent* event)
 {
+  if (obj == window() && event && event->type() == QEvent::WindowStateChange) {
+    const bool minimized = window() && (window()->windowState() & Qt::WindowMinimized);
+    if (minimized && m_rebuildTimer && m_rebuildTimer->isActive()) {
+      m_pendingRebuild = true;
+      m_rebuildTimer->stop();
+    } else if (!minimized && m_pendingRebuild) {
+      m_pendingRebuild = false;
+      scheduleRebuild();
+    }
+    return QWidget::eventFilter(obj, event);
+  }
+
   if (obj != m_scene || !m_scene) {
     return QWidget::eventFilter(obj, event);
   }

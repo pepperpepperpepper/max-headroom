@@ -3,12 +3,16 @@
 #include "backend/AudioTap.h"
 #include "backend/PipeWireGraph.h"
 #include "ui/VisualizerWidget.h"
+#include "ui/WindowVisibility.h"
 
 #include <QComboBox>
+#include <QEvent>
 #include <QFormLayout>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -145,9 +149,13 @@ void VisualizerPage::applySettings(const VisualizerSettings& settings)
 void VisualizerPage::showEvent(QShowEvent* event)
 {
   QWidget::showEvent(event);
-  if (m_tap) {
-    m_tap->setEnabled(true);
+  if (!m_windowFilterInstalled) {
+    if (QWidget* w = window()) {
+      w->installEventFilter(this);
+      m_windowFilterInstalled = true;
+    }
   }
+  updateTapEnabled();
 }
 
 void VisualizerPage::hideEvent(QHideEvent* event)
@@ -156,6 +164,29 @@ void VisualizerPage::hideEvent(QHideEvent* event)
   if (m_tap) {
     m_tap->setEnabled(false);
   }
+}
+
+bool VisualizerPage::eventFilter(QObject* watched, QEvent* event)
+{
+  if (watched == window() && event) {
+    if (event->type() == QEvent::Hide) {
+      if (m_tap) {
+        m_tap->setEnabled(false);
+      }
+    } else if (event->type() == QEvent::WindowStateChange || event->type() == QEvent::Show) {
+      QTimer::singleShot(0, this, &VisualizerPage::updateTapEnabled);
+    }
+  }
+  return QWidget::eventFilter(watched, event);
+}
+
+void VisualizerPage::updateTapEnabled()
+{
+  if (!m_tap) {
+    return;
+  }
+  const bool enabled = WindowVisibility::isInActiveTab(this) && WindowVisibility::isActive(window());
+  m_tap->setEnabled(enabled);
 }
 
 void VisualizerPage::setTapTarget(const QString& targetObject, bool captureSink)

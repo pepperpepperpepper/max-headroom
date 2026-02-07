@@ -37,7 +37,10 @@ int handleGraphControlsCommand(const QString& cmd, QStringList args, PipeWireGra
 
       auto printCurrent = [&]() {
         const std::optional<uint32_t> idOpt = wantSink ? graph.defaultAudioSinkId() : graph.defaultAudioSourceId();
+        const std::optional<uint32_t> configuredIdOpt = wantSink ? graph.configuredAudioSinkId() : graph.configuredAudioSourceId();
         const PwNodeInfo n = idOpt.has_value() ? graph.nodeById(*idOpt).value_or(PwNodeInfo{}) : PwNodeInfo{};
+        const PwNodeInfo configuredNode =
+            configuredIdOpt.has_value() ? graph.nodeById(*configuredIdOpt).value_or(PwNodeInfo{}) : PwNodeInfo{};
 
         if (jsonOutput) {
           QJsonObject o;
@@ -49,12 +52,26 @@ int handleGraphControlsCommand(const QString& cmd, QStringList args, PipeWireGra
             } else {
               o.insert(QStringLiteral("defaultSink"), QJsonValue());
             }
+            o.insert(QStringLiteral("configuredSinkId"),
+                     configuredIdOpt.has_value() ? QJsonValue(static_cast<qint64>(*configuredIdOpt)) : QJsonValue());
+            if (configuredNode.id != 0u) {
+              o.insert(QStringLiteral("configuredSink"), nodeToJson(configuredNode));
+            } else {
+              o.insert(QStringLiteral("configuredSink"), QJsonValue());
+            }
           } else {
             o.insert(QStringLiteral("defaultSourceId"), idOpt.has_value() ? QJsonValue(static_cast<qint64>(*idOpt)) : QJsonValue());
             if (n.id != 0u) {
               o.insert(QStringLiteral("defaultSource"), nodeToJson(n));
             } else {
               o.insert(QStringLiteral("defaultSource"), QJsonValue());
+            }
+            o.insert(QStringLiteral("configuredSourceId"),
+                     configuredIdOpt.has_value() ? QJsonValue(static_cast<qint64>(*configuredIdOpt)) : QJsonValue());
+            if (configuredNode.id != 0u) {
+              o.insert(QStringLiteral("configuredSource"), nodeToJson(configuredNode));
+            } else {
+              o.insert(QStringLiteral("configuredSource"), QJsonValue());
             }
           }
           out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
@@ -220,4 +237,3 @@ int handleGraphControlsCommand(const QString& cmd, QStringList args, PipeWireGra
   return exitCode;
 }
 } // namespace headroomctl
-

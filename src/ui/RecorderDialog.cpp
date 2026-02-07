@@ -3,6 +3,7 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -219,7 +220,15 @@ RecorderDialog::RecorderDialog(PipeWireGraph* graph, AudioRecorder* recorder, QW
   });
 
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::topologyChanged, this, &RecorderDialog::rebuildTargets);
+    connect(m_graph, &PipeWireGraph::topologyChanged, this, [this]() {
+      const bool minimized = windowState() & Qt::WindowMinimized;
+      if (isVisible() && !minimized) {
+        rebuildTargets();
+        m_pendingTargetRebuild = false;
+      } else {
+        m_pendingTargetRebuild = true;
+      }
+    });
   }
 
   if (m_recorder) {
@@ -229,10 +238,62 @@ RecorderDialog::RecorderDialog(PipeWireGraph* graph, AudioRecorder* recorder, QW
 
   m_statusTimer = new QTimer(this);
   m_statusTimer->setInterval(200);
+  m_statusTimer->setTimerType(Qt::CoarseTimer);
   connect(m_statusTimer, &QTimer::timeout, this, &RecorderDialog::syncUi);
-  m_statusTimer->start();
 
   syncUi();
 }
 
 RecorderDialog::~RecorderDialog() = default;
+
+void RecorderDialog::showEvent(QShowEvent* event)
+{
+  QDialog::showEvent(event);
+  const bool minimized = windowState() & Qt::WindowMinimized;
+  if (m_pendingTargetRebuild && !minimized) {
+    rebuildTargets();
+    m_pendingTargetRebuild = false;
+  }
+  syncUi();
+  if (!minimized && m_statusTimer && !m_statusTimer->isActive()) {
+    m_statusTimer->start();
+  }
+}
+
+void RecorderDialog::hideEvent(QHideEvent* event)
+{
+  QDialog::hideEvent(event);
+  if (m_statusTimer) {
+    m_statusTimer->stop();
+  }
+}
+
+void RecorderDialog::changeEvent(QEvent* event)
+{
+  QDialog::changeEvent(event);
+  if (!event || event->type() != QEvent::WindowStateChange) {
+    return;
+  }
+
+  const bool minimized = windowState() & Qt::WindowMinimized;
+  if (minimized) {
+    if (m_statusTimer) {
+      m_statusTimer->stop();
+    }
+    return;
+  }
+
+  if (!isVisible()) {
+    return;
+  }
+
+  if (m_pendingTargetRebuild) {
+    rebuildTargets();
+    m_pendingTargetRebuild = false;
+  }
+
+  syncUi();
+  if (m_statusTimer && !m_statusTimer->isActive()) {
+    m_statusTimer->start();
+  }
+}

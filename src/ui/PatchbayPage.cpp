@@ -118,7 +118,7 @@ PatchbayPage::PatchbayPage(PipeWireGraph* graph, QWidget* parent)
 
   m_view = new QGraphicsView(m_scene, this);
   m_view->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
-  m_view->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
+  m_view->setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
   m_view->setDragMode(QGraphicsView::ScrollHandDrag);
   m_view->setFocusPolicy(Qt::StrongFocus);
   root->addWidget(m_view, 1);
@@ -126,6 +126,7 @@ PatchbayPage::PatchbayPage(PipeWireGraph* graph, QWidget* parent)
   m_rebuildTimer = new QTimer(this);
   m_rebuildTimer->setSingleShot(true);
   m_rebuildTimer->setInterval(50);
+  m_rebuildTimer->setTimerType(Qt::CoarseTimer);
   connect(m_rebuildTimer, &QTimer::timeout, this, &PatchbayPage::rebuild);
 
   if (m_filter) {
@@ -200,11 +201,40 @@ void PatchbayPage::refresh()
 
 void PatchbayPage::scheduleRebuild()
 {
+  const bool minimized = window() && (window()->windowState() & Qt::WindowMinimized);
+  if (!isVisible() || minimized) {
+    m_pendingRebuild = true;
+    return;
+  }
   if (m_rebuildTimer) {
     m_rebuildTimer->start();
     return;
   }
   rebuild();
+}
+
+void PatchbayPage::showEvent(QShowEvent* event)
+{
+  QWidget::showEvent(event);
+  if (!m_windowFilterInstalled) {
+    if (QWidget* w = window()) {
+      w->installEventFilter(this);
+      m_windowFilterInstalled = true;
+    }
+  }
+  if (m_pendingRebuild) {
+    m_pendingRebuild = false;
+    scheduleRebuild();
+  }
+}
+
+void PatchbayPage::hideEvent(QHideEvent* event)
+{
+  QWidget::hideEvent(event);
+  if (m_rebuildTimer && m_rebuildTimer->isActive()) {
+    m_pendingRebuild = true;
+    m_rebuildTimer->stop();
+  }
 }
 
 void PatchbayPage::reloadProfiles()

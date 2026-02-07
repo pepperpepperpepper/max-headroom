@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 
+#include <QSet>
+
 #include <curses.h>
 
 namespace headroomtui {
@@ -157,6 +159,7 @@ void drawListPage(const char* title,
                   PipeWireGraph* graph,
                   int& selectedIdx,
                   std::optional<uint32_t> defaultNodeId,
+                  const QHash<uint32_t, VolumeOverride>* volumeOverrides,
                   int height,
                   int width)
 {
@@ -188,7 +191,13 @@ void drawListPage(const char* title,
     const auto& node = devices[idx];
     const QString name = displayNameForNode(node);
     const auto controlsOpt = graph->nodeControls(node.id);
-    const PwNodeControls controls = controlsOpt.value_or(PwNodeControls{});
+    PwNodeControls controls = controlsOpt.value_or(PwNodeControls{});
+    if (volumeOverrides) {
+      const auto it = volumeOverrides->constFind(node.id);
+      if (it != volumeOverrides->constEnd()) {
+        controls.volume = it->value;
+      }
+    }
 
     const int volPct = static_cast<int>(std::round(controls.volume * 100.0f));
     const char* muteStr = controls.mute ? "MUTED" : "     ";
@@ -218,23 +227,18 @@ void drawListPage(const char* title,
   }
 }
 
-void drawStreamsPage(PipeWireGraph* graph, int& selectedIdx, int height, int width)
+void drawStreamsPage(const QList<PwNodeInfo>& streams,
+                     PipeWireGraph* graph,
+                     int& selectedIdx,
+                     const QHash<uint32_t, VolumeOverride>* volumeOverrides,
+                     int height,
+                     int width)
 {
   if (!graph) {
     mvprintw(3, 0, "Streams");
     mvprintw(6, 0, "(no graph)");
     return;
   }
-
-  QList<PwNodeInfo> streams = graph->audioPlaybackStreams();
-  streams.append(graph->audioCaptureStreams());
-
-  std::sort(streams.begin(), streams.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
-    if (a.mediaClass != b.mediaClass) {
-      return a.mediaClass < b.mediaClass;
-    }
-    return a.description < b.description;
-  });
 
   const int streamCount = static_cast<int>(streams.size());
   mvprintw(3, 0, "Streams (%d)", streamCount);
@@ -255,6 +259,77 @@ void drawStreamsPage(PipeWireGraph* graph, int& selectedIdx, int height, int wid
   }
   start = std::clamp(start, 0, std::max(0, streamCount - listHeight));
 
+  const QList<PwNodeInfo> nodes = graph->nodes();
+  const QList<PwLinkInfo> links = graph->links();
+
+  QHash<uint32_t, PwNodeInfo> nodesById;
+  nodesById.reserve(nodes.size());
+  for (const auto& n : nodes) {
+    nodesById.insert(n.id, n);
+  }
+
+  QHash<uint32_t, QVector<uint32_t>> forward;
+  QHash<uint32_t, QVector<uint32_t>> backward;
+  forward.reserve(links.size());
+  backward.reserve(links.size());
+  for (const auto& l : links) {
+    if (l.outputNodeId == 0 || l.inputNodeId == 0) {
+      continue;
+    }
+    forward[l.outputNodeId].push_back(l.inputNodeId);
+    backward[l.inputNodeId].push_back(l.outputNodeId);
+  }
+
+  auto routeForStreamFast = [&](const PwNodeInfo& stream) -> StreamRoute {
+    const bool isPlayback = stream.mediaClass.startsWith(QStringLiteral("Stream/Output/Audio"));
+    const QString wanted = isPlayback ? QStringLiteral("Audio/Sink") : QStringLiteral("Audio/Source");
+
+    struct QueueItem {
+      uint32_t nodeId = 0;
+      int depth = 0;
+    };
+
+    constexpr int kMaxDepth = 6;
+
+    QVector<QueueItem> queue;
+    queue.reserve(64);
+    QSet<uint32_t> visited;
+    visited.reserve(64);
+
+    visited.insert(stream.id);
+    queue.push_back({stream.id, 0});
+
+    int q = 0;
+    while (q < queue.size()) {
+      const QueueItem item = queue[q++];
+      if (item.depth > kMaxDepth) {
+        continue;
+      }
+
+      if (item.nodeId != stream.id) {
+        const auto it = nodesById.constFind(item.nodeId);
+        if (it != nodesById.constEnd() && it->mediaClass == wanted) {
+          return StreamRoute{it->id, displayNameForNode(*it), isPlayback};
+        }
+      }
+
+      if (item.depth == kMaxDepth) {
+        continue;
+      }
+
+      const auto& nexts = isPlayback ? forward.value(item.nodeId) : backward.value(item.nodeId);
+      for (uint32_t next : nexts) {
+        if (visited.contains(next)) {
+          continue;
+        }
+        visited.insert(next);
+        queue.push_back({next, item.depth + 1});
+      }
+    }
+
+    return StreamRoute{0, {}, isPlayback};
+  };
+
   for (int row = 0; row < listHeight; row++) {
     const int idx = start + row;
     if (idx >= streamCount) {
@@ -266,9 +341,15 @@ void drawStreamsPage(PipeWireGraph* graph, int& selectedIdx, int height, int wid
 
     const QString name = displayNameForNode(node);
     const auto controlsOpt = graph->nodeControls(node.id);
-    const PwNodeControls controls = controlsOpt.value_or(PwNodeControls{});
+    PwNodeControls controls = controlsOpt.value_or(PwNodeControls{});
+    if (volumeOverrides) {
+      const auto it = volumeOverrides->constFind(node.id);
+      if (it != volumeOverrides->constEnd()) {
+        controls.volume = it->value;
+      }
+    }
 
-    const StreamRoute route = routeForStream(graph, node);
+    const StreamRoute route = routeForStreamFast(node);
 
     const char* typeStr = isPlayback ? "PB" : "REC";
     const int volPct = static_cast<int>(std::round(controls.volume * 100.0f));
@@ -306,4 +387,3 @@ void drawStreamsPage(PipeWireGraph* graph, int& selectedIdx, int height, int wid
 }
 
 } // namespace headroomtui
-

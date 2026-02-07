@@ -19,11 +19,15 @@ public slots:
 protected:
   void showEvent(QShowEvent* event) override;
   void hideEvent(QHideEvent* event) override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
 
 private:
+  void updateTimerActive();
+
   AudioTap* m_tap = nullptr;
   QTimer* m_timer = nullptr;
   int m_refreshIntervalMs = 33;
   double m_waveformHistorySeconds = 0.5;
+  bool m_windowFilterInstalled = false;
 };

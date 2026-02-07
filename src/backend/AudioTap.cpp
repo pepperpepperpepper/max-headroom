@@ -225,6 +225,7 @@ void AudioTap::connectStreamLocked()
       PW_KEY_MEDIA_CATEGORY, "Capture",
       PW_KEY_MEDIA_ROLE, "Monitor",
       PW_KEY_NODE_NAME, "headroom.visualizer",
+      PW_KEY_NODE_LATENCY, "1024/48000",
       PW_KEY_STREAM_MONITOR, "true",
       nullptr);
 

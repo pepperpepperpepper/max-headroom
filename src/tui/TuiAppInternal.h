@@ -20,6 +20,10 @@ struct TuiState final {
   int selectedStatus = 0;
   int selectedEngine = 0;
 
+  QList<PwNodeInfo> cachedSinks;
+  QList<PwNodeInfo> cachedSources;
+  QList<PwNodeInfo> cachedStreams;
+
   uint32_t patchbayOutNodeId = 0;
   uint32_t patchbayOutPortId = 0;
   uint32_t patchbayInNodeId = 0;
@@ -36,11 +40,19 @@ struct TuiState final {
   bool showHelp = false;
   QString globalStatus;
 
+  bool dirty = true;
+  QElapsedTimer lastRender;
+
+  QElapsedTimer clock;
+  QHash<uint32_t, VolumeOverride> volumeOverrides;
+
   QList<SystemdUnitStatus> engineUnits;
   QString engineStatus;
   QElapsedTimer engineRefresh;
   bool engineDirty = true;
 };
+
+void flushPendingVolumeChanges(PipeWireGraph& graph, TuiState& state, bool force = false);
 
 void tickRecordingTimer(AudioRecorder& recorder, TuiState& state);
 void refreshEngineStatusIfNeeded(TuiState& state);

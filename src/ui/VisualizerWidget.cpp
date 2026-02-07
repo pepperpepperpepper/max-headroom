@@ -2,8 +2,11 @@
 
 #include "backend/AudioTap.h"
 #include "settings/VisualizerSettings.h"
+#include "ui/WindowVisibility.h"
 
 #include <algorithm>
+#include <QEvent>
+#include <QGuiApplication>
 #include <QPainter>
 #include <QTimer>
 #include <QtGlobal>
@@ -37,13 +40,8 @@ void VisualizerWidget::applySettings(const VisualizerSettings& settings)
 
   if (m_timer) {
     m_timer->setInterval(m_refreshIntervalMs);
-    if (isVisible()) {
-      if (!m_timer->isActive()) {
-        m_timer->start();
-      }
-    } else {
-      m_timer->stop();
-    }
+    m_timer->setTimerType((m_refreshIntervalMs <= 20) ? Qt::PreciseTimer : Qt::CoarseTimer);
+    updateTimerActive();
   }
 
   update();
@@ -52,15 +50,40 @@ void VisualizerWidget::applySettings(const VisualizerSettings& settings)
 void VisualizerWidget::showEvent(QShowEvent* event)
 {
   QWidget::showEvent(event);
-  if (m_timer && !m_timer->isActive()) {
-    m_timer->start(m_refreshIntervalMs);
+  if (!m_windowFilterInstalled) {
+    if (QWidget* w = window()) {
+      w->installEventFilter(this);
+      m_windowFilterInstalled = true;
+    }
   }
+  updateTimerActive();
 }
 
 void VisualizerWidget::hideEvent(QHideEvent* event)
 {
   QWidget::hideEvent(event);
-  if (m_timer) {
+  updateTimerActive();
+}
+
+bool VisualizerWidget::eventFilter(QObject* watched, QEvent* event)
+{
+  if (watched == window() && event) {
+    if (event->type() == QEvent::WindowStateChange || event->type() == QEvent::Hide || event->type() == QEvent::Show) {
+      QTimer::singleShot(0, this, &VisualizerWidget::updateTimerActive);
+    }
+  }
+  return QWidget::eventFilter(watched, event);
+}
+
+void VisualizerWidget::updateTimerActive()
+{
+  if (!m_timer) {
+    return;
+  }
+  const bool want = WindowVisibility::isInActiveTab(this) && WindowVisibility::isActive(window());
+  if (want && !m_timer->isActive()) {
+    m_timer->start(m_refreshIntervalMs);
+  } else if (!want && m_timer->isActive()) {
     m_timer->stop();
   }
 }

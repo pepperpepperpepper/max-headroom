@@ -7,22 +7,29 @@
 #include "settings/SettingsKeys.h"
 #include "ui/EqDialog.h"
 #include "ui/LevelMeterWidget.h"
+#include "ui/WindowVisibility.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSettings>
 #include <QSlider>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QPushButton>
+#include <QWindow>
 
+#include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -93,6 +100,20 @@ MixerPage::MixerPage(PipeWireThread* pw, PipeWireGraph* graph, EqManager* eq, QW
   m_filter = new QLineEdit(this);
   m_filter->setPlaceholderText(tr("Filter streams/devices…"));
   form->addRow(tr("Filter:"), m_filter);
+
+  m_meterMode = new QComboBox(this);
+  m_meterMode->addItem(tr("Off"), static_cast<int>(MeterMode::Off));
+  m_meterMode->addItem(tr("Selected only"), static_cast<int>(MeterMode::SelectedOnly));
+  m_meterMode->addItem(tr("Visible rows"), static_cast<int>(MeterMode::VisibleRows));
+  m_meterMode->addItem(tr("All"), static_cast<int>(MeterMode::All));
+  m_meterMode->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  form->addRow(tr("Meters:"), m_meterMode);
+
+  m_meterStyle = new QComboBox(this);
+  m_meterStyle->addItem(tr("Simple (Peak)"), static_cast<int>(MeterStyle::SimplePeak));
+  m_meterStyle->addItem(tr("Detailed (Peak + RMS)"), static_cast<int>(MeterStyle::DetailedPeakRms));
+  m_meterStyle->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+  form->addRow(tr("Meter style:"), m_meterStyle);
   root->addLayout(form);
 
   m_scroll = new QScrollArea(this);
@@ -102,18 +123,91 @@ MixerPage::MixerPage(PipeWireThread* pw, PipeWireGraph* graph, EqManager* eq, QW
 
   m_container = new QWidget(m_scroll);
   m_scroll->setWidget(m_container);
+  m_scroll->viewport()->installEventFilter(this);
+  if (m_scroll->verticalScrollBar()) {
+    connect(m_scroll->verticalScrollBar(), &QScrollBar::valueChanged, this, &MixerPage::updateMeterActives);
+  }
+  if (m_scroll->horizontalScrollBar()) {
+    connect(m_scroll->horizontalScrollBar(), &QScrollBar::valueChanged, this, &MixerPage::updateMeterActives);
+  }
 
   m_rebuildTimer = new QTimer(this);
   m_rebuildTimer->setSingleShot(true);
   m_rebuildTimer->setInterval(50);
+  m_rebuildTimer->setTimerType(Qt::CoarseTimer);
   connect(m_rebuildTimer, &QTimer::timeout, this, &MixerPage::rebuild);
 
   m_meterTimer = new QTimer(this);
   m_meterTimer->setInterval(33);
+  m_meterTimer->setTimerType(Qt::CoarseTimer);
   connect(m_meterTimer, &QTimer::timeout, this, &MixerPage::tickMeters);
-  m_meterTimer->start();
 
   connect(m_filter, &QLineEdit::textChanged, this, &MixerPage::scheduleRebuild);
+  connect(m_meterMode, &QComboBox::currentIndexChanged, this, [this](int) {
+    if (!m_meterMode) {
+      return;
+    }
+    const int raw = m_meterMode->currentData().toInt();
+    const MeterMode mode = [raw]() {
+      switch (raw) {
+      case static_cast<int>(MeterMode::Off):
+        return MeterMode::Off;
+      case static_cast<int>(MeterMode::SelectedOnly):
+        return MeterMode::SelectedOnly;
+      case static_cast<int>(MeterMode::VisibleRows):
+        return MeterMode::VisibleRows;
+      case static_cast<int>(MeterMode::All):
+        return MeterMode::All;
+      default:
+        return MeterMode::VisibleRows;
+      }
+    }();
+
+    if (mode == m_meterModeValue) {
+      return;
+    }
+
+    m_meterModeValue = mode;
+    QSettings s;
+    s.setValue(SettingsKeys::mixerMetersMode(), raw);
+    updateMeterActives();
+  });
+
+  connect(m_meterStyle, &QComboBox::currentIndexChanged, this, [this](int) {
+    if (!m_meterStyle) {
+      return;
+    }
+
+    const int raw = m_meterStyle->currentData().toInt();
+    const MeterStyle style = (raw == static_cast<int>(MeterStyle::DetailedPeakRms)) ? MeterStyle::DetailedPeakRms : MeterStyle::SimplePeak;
+    if (style == m_meterStyleValue) {
+      return;
+    }
+
+    m_meterStyleValue = style;
+    QSettings s;
+    s.setValue(SettingsKeys::mixerMetersStyle(), raw);
+    applyMeterStyle();
+    updateMeterActives();
+  });
+
+  connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* now) {
+    if (!now || !isAncestorOf(now)) {
+      return;
+    }
+
+    QWidget* w = now;
+    while (w) {
+      if (w->property("headroomMixerRow").toBool()) {
+        if (m_selectedRow != w) {
+          m_selectedRow = w;
+          updateMeterActives();
+        }
+        return;
+      }
+      w = w->parentWidget();
+    }
+  });
   if (m_graph) {
     connect(m_graph, &PipeWireGraph::topologyChanged, this, &MixerPage::scheduleRebuild);
     connect(m_graph, &PipeWireGraph::metadataChanged, this, &MixerPage::scheduleRebuild);
@@ -140,7 +234,72 @@ MixerPage::MixerPage(PipeWireThread* pw, PipeWireGraph* graph, EqManager* eq, QW
     }
   });
 
+  loadMeterMode();
+  loadMeterStyle();
   rebuild();
+}
+
+void MixerPage::showEvent(QShowEvent* event)
+{
+  QWidget::showEvent(event);
+  if (!m_windowFilterInstalled) {
+    if (QWidget* w = window()) {
+      w->installEventFilter(this);
+      m_windowFilterInstalled = true;
+    }
+  }
+  if (m_pendingRebuild) {
+    m_pendingRebuild = false;
+    scheduleRebuild();
+  }
+  updateMeterActives();
+}
+
+void MixerPage::hideEvent(QHideEvent* event)
+{
+  QWidget::hideEvent(event);
+  if (m_rebuildTimer && m_rebuildTimer->isActive()) {
+    m_pendingRebuild = true;
+    m_rebuildTimer->stop();
+  }
+  disableAllMeters();
+}
+
+bool MixerPage::eventFilter(QObject* watched, QEvent* event)
+{
+  if (watched == window() && event) {
+    if (event->type() == QEvent::Hide) {
+      if (m_rebuildTimer && m_rebuildTimer->isActive()) {
+        m_pendingRebuild = true;
+        m_rebuildTimer->stop();
+      }
+      disableAllMeters();
+    } else if (event->type() == QEvent::Show) {
+      QTimer::singleShot(0, this, [this]() {
+        if (m_pendingRebuild) {
+          m_pendingRebuild = false;
+          scheduleRebuild();
+        }
+        updateMeterActives();
+      });
+    } else if (event->type() == QEvent::WindowStateChange) {
+      QTimer::singleShot(0, this, [this]() {
+        const bool minimized = window() && (window()->windowState() & Qt::WindowMinimized);
+        if (minimized && m_rebuildTimer && m_rebuildTimer->isActive()) {
+          m_pendingRebuild = true;
+          m_rebuildTimer->stop();
+        } else if (!minimized && m_pendingRebuild) {
+          m_pendingRebuild = false;
+          scheduleRebuild();
+        }
+        updateMeterActives();
+      });
+    }
+  }
+  if (m_scroll && watched == m_scroll->viewport() && event && event->type() == QEvent::Resize) {
+    updateMeterActives();
+  }
+  return QWidget::eventFilter(watched, event);
 }
 
 void MixerPage::refresh()
@@ -148,8 +307,196 @@ void MixerPage::refresh()
   scheduleRebuild();
 }
 
+void MixerPage::updateForWindowVisibilityChange()
+{
+  const bool windowActive = WindowVisibility::isActive(window());
+
+  if (!windowActive && m_rebuildTimer && m_rebuildTimer->isActive()) {
+    m_pendingRebuild = true;
+    m_rebuildTimer->stop();
+  } else if (windowActive && m_pendingRebuild) {
+    m_pendingRebuild = false;
+    scheduleRebuild();
+  }
+
+  updateMeterActives();
+}
+
+void MixerPage::loadMeterMode()
+{
+  QSettings s;
+  const int raw = s.value(SettingsKeys::mixerMetersMode(), static_cast<int>(MeterMode::VisibleRows)).toInt();
+
+  m_meterModeValue = [raw]() {
+    switch (raw) {
+    case static_cast<int>(MeterMode::Off):
+      return MeterMode::Off;
+    case static_cast<int>(MeterMode::SelectedOnly):
+      return MeterMode::SelectedOnly;
+    case static_cast<int>(MeterMode::VisibleRows):
+      return MeterMode::VisibleRows;
+    case static_cast<int>(MeterMode::All):
+      return MeterMode::All;
+    default:
+      return MeterMode::VisibleRows;
+    }
+  }();
+
+  if (m_meterMode) {
+    const int idx = m_meterMode->findData(static_cast<int>(m_meterModeValue));
+    const QSignalBlocker blocker(m_meterMode);
+    m_meterMode->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
+}
+
+void MixerPage::loadMeterStyle()
+{
+  QSettings s;
+  const int raw = s.value(SettingsKeys::mixerMetersStyle(), static_cast<int>(MeterStyle::SimplePeak)).toInt();
+  m_meterStyleValue = (raw == static_cast<int>(MeterStyle::DetailedPeakRms)) ? MeterStyle::DetailedPeakRms : MeterStyle::SimplePeak;
+
+  if (m_meterStyle) {
+    const int idx = m_meterStyle->findData(static_cast<int>(m_meterStyleValue));
+    const QSignalBlocker blocker(m_meterStyle);
+    m_meterStyle->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
+}
+
+void MixerPage::applyMeterStyle()
+{
+  const auto style = (m_meterStyleValue == MeterStyle::SimplePeak) ? LevelMeterWidget::Style::SimplePeak : LevelMeterWidget::Style::DetailedPeakRms;
+  for (const auto& w : m_meters) {
+    if (!w) {
+      continue;
+    }
+    w->setStyle(style);
+  }
+}
+
+void MixerPage::disableAllMeters()
+{
+  for (const auto& w : m_meters) {
+    if (!w) {
+      continue;
+    }
+    w->setActive(false);
+  }
+  if (m_meterTimer && m_meterTimer->isActive()) {
+    m_meterTimer->stop();
+  }
+}
+
+void MixerPage::updateMeterActives()
+{
+  const bool windowActive = WindowVisibility::isActive(window());
+  const bool tabActive = WindowVisibility::isInActiveTab(this);
+  const bool wantMeters = tabActive && windowActive && m_meterModeValue != MeterMode::Off;
+
+  if (std::getenv("HEADROOM_DEBUG_VISIBILITY")) {
+    static bool s_logged = false;
+    if (!s_logged) {
+      s_logged = true;
+      QWidget* w = window();
+      QWindow* handle = w ? w->windowHandle() : nullptr;
+      std::fprintf(
+          stderr,
+          "headroom: debug: MixerPage visibility wantMeters=%d windowActive=%d pageVisible=%d meterMode=%d meters=%d window.isVisible=%d windowState=0x%x handleVis=%d WA_Mapped=%d\n",
+          wantMeters ? 1 : 0,
+          windowActive ? 1 : 0,
+          isVisible() ? 1 : 0,
+          static_cast<int>(m_meterModeValue),
+          static_cast<int>(m_meters.size()),
+          (w && w->isVisible()) ? 1 : 0,
+          w ? static_cast<unsigned int>(w->windowState()) : 0U,
+          handle ? static_cast<int>(handle->visibility()) : -1,
+          w ? (w->testAttribute(Qt::WA_Mapped) ? 1 : 0) : 0);
+    }
+  }
+
+  auto isRowSelected = [this](QWidget* row) {
+    return row && m_selectedRow && row == m_selectedRow;
+  };
+
+  auto rowForWidget = [](QWidget* w) -> QWidget* {
+    QWidget* cur = w;
+    while (cur) {
+      if (cur->property("headroomMixerRow").toBool()) {
+        return cur;
+      }
+      cur = cur->parentWidget();
+    }
+    return nullptr;
+  };
+
+  auto isMeterInViewport = [this](LevelMeterWidget* meter) {
+    if (!meter || !m_scroll || !m_scroll->viewport()) {
+      return false;
+    }
+    const QRect viewportRect = m_scroll->viewport()->rect();
+    const QPoint topLeft = meter->mapTo(m_scroll->viewport(), QPoint(0, 0));
+    const QRect r(topLeft, meter->size());
+    return r.intersects(viewportRect);
+  };
+
+  bool anyActive = false;
+  int activeCount = 0;
+  for (const auto& w : m_meters) {
+    if (!w) {
+      continue;
+    }
+
+    bool active = false;
+    switch (m_meterModeValue) {
+    case MeterMode::Off:
+      active = false;
+      break;
+    case MeterMode::All:
+      active = wantMeters;
+      break;
+    case MeterMode::VisibleRows:
+      active = wantMeters && isMeterInViewport(w);
+      break;
+    case MeterMode::SelectedOnly: {
+      QWidget* row = rowForWidget(w);
+      active = wantMeters && isMeterInViewport(w) && isRowSelected(row);
+      break;
+    }
+    }
+
+    w->setActive(active);
+    anyActive = anyActive || active;
+    activeCount += active ? 1 : 0;
+  }
+
+  const bool wantTimer = wantMeters && anyActive;
+  if (m_meterTimer) {
+    const int baseIntervalMs = (m_meterStyleValue == MeterStyle::SimplePeak) ? 40 : 33;
+    int intervalMs = baseIntervalMs;
+    if (activeCount >= 12) {
+      intervalMs = std::max(intervalMs, 66);
+    } else if (activeCount >= 8) {
+      intervalMs = std::max(intervalMs, 50);
+    } else if (activeCount >= 5) {
+      intervalMs = std::max(intervalMs, 40);
+    }
+    if (m_meterTimer->interval() != intervalMs) {
+      m_meterTimer->setInterval(intervalMs);
+    }
+
+    if (wantTimer && !m_meterTimer->isActive()) {
+      m_meterTimer->start();
+    } else if (!wantTimer && m_meterTimer->isActive()) {
+      m_meterTimer->stop();
+    }
+  }
+}
+
 void MixerPage::scheduleRebuild()
 {
+  if (!WindowVisibility::isInActiveTab(this) || !WindowVisibility::isActive(window())) {
+    m_pendingRebuild = true;
+    return;
+  }
   if (!m_rebuildTimer->isActive()) {
     m_rebuildTimer->start();
   }
@@ -157,6 +504,9 @@ void MixerPage::scheduleRebuild()
 
 void MixerPage::refreshControls()
 {
+  if (!WindowVisibility::isInActiveTab(this) || !WindowVisibility::isActive(window())) {
+    return;
+  }
   if (!m_graph) {
     return;
   }
@@ -224,13 +574,20 @@ void MixerPage::refreshControls()
 
 void MixerPage::tickMeters()
 {
+  if (!WindowVisibility::isInActiveTab(this) || !WindowVisibility::isActive(window())) {
+    disableAllMeters();
+    return;
+  }
+
   QList<QPointer<LevelMeterWidget>> alive;
   alive.reserve(m_meters.size());
   for (const auto& w : m_meters) {
     if (!w) {
       continue;
     }
-    w->tick();
+    if (w->isActive()) {
+      w->tick();
+    }
     alive.push_back(w);
   }
   m_meters.swap(alive);
@@ -433,4 +790,6 @@ void MixerPage::rebuild()
   layout->addStretch(1);
 
   m_meters = meters;
+  applyMeterStyle();
+  updateMeterActives();
 }

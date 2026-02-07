@@ -6,6 +6,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${1:-$ROOT/screenshots}"
 mkdir -p "$OUT_DIR"
 
+BUILD_DIR="${HEADROOM_BUILD_DIR:-}"
+if [[ -z "$BUILD_DIR" ]]; then
+  if [[ -x "$ROOT/build_test/headroom" && -x "$ROOT/build_test/headroomctl" && -x "$ROOT/build_test/headroom-tui" ]]; then
+    BUILD_DIR="$ROOT/build_test"
+  else
+    BUILD_DIR="$ROOT/build"
+  fi
+fi
+
+HEADROOM_BIN="$BUILD_DIR/headroom"
+HEADROOMCTL_BIN="$BUILD_DIR/headroomctl"
+HEADROOM_TUI_BIN="$BUILD_DIR/headroom-tui"
+
 RUNTIME_DIR="/tmp/headroom-runtime-$RANDOM-$RANDOM"
 mkdir -p "$RUNTIME_DIR"
 chmod 700 "$RUNTIME_DIR"
@@ -54,14 +67,16 @@ maybe_terminal_screenshots() {
     echo "info: skipping terminal screenshots (need xvfb-run, openbox, xterm, xdotool, import, timeout)" >&2
     return 0
   fi
-  if [[ ! -x "$ROOT/build/headroom-tui" || ! -x "$ROOT/build/headroomctl" ]]; then
-    echo "info: skipping terminal screenshots (missing ./build/headroom-tui or ./build/headroomctl)" >&2
+  if [[ ! -x "$HEADROOM_TUI_BIN" || ! -x "$HEADROOMCTL_BIN" ]]; then
+    echo "info: skipping terminal screenshots (missing headroom-tui/headroomctl in $BUILD_DIR)" >&2
     return 0
   fi
 
   if ! timeout 120 xvfb-run -a -s "-screen 0 1200x760x24 -ac -nolisten tcp -extension GLX" env \
     ROOT="$ROOT" \
     OUT_DIR="$out_dir" \
+    HEADROOMCTL_BIN="$HEADROOMCTL_BIN" \
+    HEADROOM_TUI_BIN="$HEADROOM_TUI_BIN" \
     XDG_RUNTIME_DIR="$RUNTIME_DIR" \
     XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-}" \
     XDG_CACHE_HOME="${XDG_CACHE_HOME:-}" \
@@ -149,12 +164,12 @@ maybe_terminal_screenshots() {
       }
 
       # Ensure lists are non-empty for CLI screenshots.
-      "$ROOT/build/headroomctl" patchbay save screenshots >/dev/null 2>&1 || true
-      "$ROOT/build/headroomctl" session save screenshots >/dev/null 2>&1 || true
+      "$HEADROOMCTL_BIN" patchbay save screenshots >/dev/null 2>&1 || true
+      "$HEADROOMCTL_BIN" session save screenshots >/dev/null 2>&1 || true
 
       XTERM_OPTS=(-geometry 120x38 -fa "DejaVu Sans Mono" -fs 12 -bg "#0b0f19" -fg "#e2e8f0")
 
-      xterm "${XTERM_OPTS[@]}" -T "Headroom TUI" -e "$ROOT/build/headroom-tui" &
+      xterm "${XTERM_OPTS[@]}" -T "Headroom TUI" -e "$HEADROOM_TUI_BIN" &
       TUI_PID=$!
       TUI_WIN="$(wait_for_window "Headroom TUI")"
       focus_window "$TUI_WIN"
@@ -213,13 +228,13 @@ maybe_terminal_screenshots() {
       cat >"$CLI_SCRIPT" <<'"'"'EOF'"'"'
 set -euo pipefail
 printf "$ headroomctl sinks\n"
-"$ROOT/build/headroomctl" sinks
+"$HEADROOMCTL_BIN" sinks
 printf "\n$ headroomctl patchbay profiles\n"
-"$ROOT/build/headroomctl" patchbay profiles || true
+"$HEADROOMCTL_BIN" patchbay profiles || true
 printf "\n$ headroomctl session list\n"
-"$ROOT/build/headroomctl" session list || true
+"$HEADROOMCTL_BIN" session list || true
 printf "\n$ headroomctl engine status\n"
-"$ROOT/build/headroomctl" engine status || true
+"$HEADROOMCTL_BIN" engine status || true
 printf "\n"
 sleep 60
 EOF
@@ -241,12 +256,16 @@ EOF
 }
 
 echo "[1/6] Build"
-cmake -S "$ROOT" -B "$ROOT/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
-cmake --build "$ROOT/build" -j >/dev/null
+if [[ -x "$HEADROOM_BIN" && -x "$HEADROOMCTL_BIN" ]]; then
+  echo "info: using existing binaries from: $BUILD_DIR" >&2
+else
+  cmake -S "$ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release >/dev/null
+  cmake --build "$BUILD_DIR" -j >/dev/null
+fi
 
 echo "[2/6] Tray menu screenshots"
 TRAY_LOG="$(mktemp "/tmp/headroom-tray-demo-XXXXXX.log")"
-if ! "$ROOT/scripts/make_tray_demo_screenshots.sh" "$OUT_DIR" >"$TRAY_LOG" 2>&1; then
+if ! HEADROOM_BIN="$HEADROOM_BIN" HEADROOMCTL_BIN="$HEADROOMCTL_BIN" "$ROOT/scripts/make_tray_demo_screenshots.sh" "$OUT_DIR" >"$TRAY_LOG" 2>&1; then
   echo "warn: tray demo screenshots failed; falling back to single tray-menu.png" >&2
   tail -n 80 "$TRAY_LOG" >&2 || true
   "$ROOT/scripts/make_tray_screenshot.sh" "$OUT_DIR/tray-menu.png" >"$TRAY_LOG" 2>&1 || true
@@ -344,19 +363,19 @@ fi
 TONE2_PID=$!
 
 # Enable EQ for the virtual sink so the Patchbay screenshot includes the EQ node.
-XDG_RUNTIME_DIR="$RUNTIME_DIR" "$ROOT/build/headroomctl" eq enable Headroom-NullSink2 on >/dev/null 2>&1 || true
+XDG_RUNTIME_DIR="$RUNTIME_DIR" "$HEADROOMCTL_BIN" eq enable Headroom-NullSink2 on >/dev/null 2>&1 || true
 
 echo "[5/6] Capture screenshots (offscreen)"
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
 
-"$ROOT/build/headroom" --tab mixer --screenshot "$OUT_DIR/mixer.png" --screenshot-delay-ms 700 >/dev/null 2>&1
-"$ROOT/build/headroom" --tab visualizer --tap-target "$PREFERRED_SINK" --tap-capture-sink --screenshot "$OUT_DIR/visualizer.png" --screenshot-delay-ms 1800 >/dev/null 2>&1
-"$ROOT/build/headroom" --tab patchbay --screenshot "$OUT_DIR/patchbay.png" --screenshot-wait-node "headroom\\.eq\\." --screenshot-wait-timeout-ms 15000 --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/build/headroom" --tab graph --screenshot "$OUT_DIR/graph.png" --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/build/headroom" --screenshot-window settings --screenshot "$OUT_DIR/settings.png" --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/build/headroom" --screenshot-window eq --screenshot "$OUT_DIR/eq.png" --screenshot-delay-ms 900 >/dev/null 2>&1
-"$ROOT/build/headroom" --screenshot-window engine --screenshot "$OUT_DIR/engine.png" --screenshot-delay-ms 900 >/dev/null 2>&1
+"$HEADROOM_BIN" --tab mixer --screenshot "$OUT_DIR/mixer.png" --screenshot-delay-ms 700 >/dev/null 2>&1
+"$HEADROOM_BIN" --tab visualizer --tap-target "$PREFERRED_SINK" --tap-capture-sink --screenshot "$OUT_DIR/visualizer.png" --screenshot-delay-ms 1800 >/dev/null 2>&1
+"$HEADROOM_BIN" --tab patchbay --screenshot "$OUT_DIR/patchbay.png" --screenshot-wait-node "headroom\\.eq\\." --screenshot-wait-timeout-ms 15000 --screenshot-delay-ms 900 >/dev/null 2>&1
+"$HEADROOM_BIN" --tab graph --screenshot "$OUT_DIR/graph.png" --screenshot-delay-ms 900 >/dev/null 2>&1
+"$HEADROOM_BIN" --screenshot-window settings --screenshot "$OUT_DIR/settings.png" --screenshot-delay-ms 900 >/dev/null 2>&1
+"$HEADROOM_BIN" --screenshot-window eq --screenshot "$OUT_DIR/eq.png" --screenshot-delay-ms 900 >/dev/null 2>&1
+"$HEADROOM_BIN" --screenshot-window engine --screenshot "$OUT_DIR/engine.png" --screenshot-delay-ms 900 >/dev/null 2>&1
 maybe_terminal_screenshots "$OUT_DIR" || true
 
 echo "[6/6] Done"

@@ -15,21 +15,33 @@ void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state)
   int* selPtr = nullptr;
 
   if (state.page == Page::Outputs) {
-    QSettings s;
-    devices = applySinksOrder(graph.audioSinks(), s);
+    devices = state.cachedSinks;
+    if (devices.isEmpty()) {
+      QSettings s;
+      devices = applySinksOrder(graph.audioSinks(), s);
+    }
+    state.cachedSinks = devices;
     selPtr = &state.selectedSink;
   } else if (state.page == Page::Inputs) {
-    devices = graph.audioSources();
+    devices = state.cachedSources;
+    if (devices.isEmpty()) {
+      devices = graph.audioSources();
+    }
+    state.cachedSources = devices;
     selPtr = &state.selectedSource;
   } else {
-    devices = graph.audioPlaybackStreams();
-    devices.append(graph.audioCaptureStreams());
-    std::sort(devices.begin(), devices.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
-      if (a.mediaClass != b.mediaClass) {
-        return a.mediaClass < b.mediaClass;
-      }
-      return a.description < b.description;
-    });
+    devices = state.cachedStreams;
+    if (devices.isEmpty()) {
+      devices = graph.audioPlaybackStreams();
+      devices.append(graph.audioCaptureStreams());
+      std::sort(devices.begin(), devices.end(), [](const PwNodeInfo& a, const PwNodeInfo& b) {
+        if (a.mediaClass != b.mediaClass) {
+          return a.mediaClass < b.mediaClass;
+        }
+        return a.description < b.description;
+      });
+    }
+    state.cachedStreams = devices;
     selPtr = &state.selectedStream;
   }
 
@@ -38,7 +50,13 @@ void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state)
   sel = clampIndex(sel, devices.size());
   const PwNodeInfo selectedNode = devices.isEmpty() ? PwNodeInfo{} : devices[sel];
   const uint32_t nodeId = devices.isEmpty() ? 0u : selectedNode.id;
-  const PwNodeControls ctrls = graph.nodeControls(nodeId).value_or(PwNodeControls{});
+  PwNodeControls ctrls = graph.nodeControls(nodeId).value_or(PwNodeControls{});
+  if (nodeId != 0u) {
+    const auto it = state.volumeOverrides.constFind(nodeId);
+    if (it != state.volumeOverrides.constEnd()) {
+      ctrls.volume = it->value;
+    }
+  }
 
   auto trySetDefault = [&](bool sink) {
     if (nodeId == 0u) {
@@ -136,6 +154,7 @@ void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state)
           }
         }
         sel = clampIndex(idx, devices.size());
+        state.cachedSinks = devices;
       } else {
         beep();
       }
@@ -144,14 +163,28 @@ void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state)
   case KEY_LEFT:
   case '-':
     if (nodeId != 0u) {
-      graph.setNodeVolume(nodeId, clampVolume(ctrls.volume - kVolumeStep));
+      if (!state.clock.isValid()) {
+        state.clock.start();
+      }
+      VolumeOverride& ov = state.volumeOverrides[nodeId];
+      ov.value = clampVolume(ctrls.volume - kVolumeStep);
+      ov.lastInputMs = static_cast<int64_t>(state.clock.elapsed());
+      ov.dirty = true;
+      flushPendingVolumeChanges(graph, state);
     }
     break;
   case KEY_RIGHT:
   case '+':
   case '=':
     if (nodeId != 0u) {
-      graph.setNodeVolume(nodeId, clampVolume(ctrls.volume + kVolumeStep));
+      if (!state.clock.isValid()) {
+        state.clock.start();
+      }
+      VolumeOverride& ov = state.volumeOverrides[nodeId];
+      ov.value = clampVolume(ctrls.volume + kVolumeStep);
+      ov.lastInputMs = static_cast<int64_t>(state.clock.elapsed());
+      ov.dirty = true;
+      flushPendingVolumeChanges(graph, state);
     }
     break;
   case 'm':
@@ -185,4 +218,3 @@ void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state)
 
 } // namespace tui_actions_internal
 } // namespace headroomtui
-

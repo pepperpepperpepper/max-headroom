@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            expect \
+            g++ \
+            imagemagick \
+            jq \
+            libpipewire-0.3-dev \
+            libncursesw5-dev \
+            libsndfile1-dev \
+            libspa-0.2-dev \
+            ninja-build \
+            openbox \
+            pkg-config \
+            pipewire \
+            qt6-base-plugins \
+            qt6-base-dev \
+            stalonetray \
+            wireplumber \
+            xvfb \
+            xdotool
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHEADROOM_BUILD_GUI=ON \
+            -DHEADROOM_BUILD_TUI=ON \
+            -DHEADROOM_BUILD_CLI=ON \
+            -DHEADROOM_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

@@ -13,6 +13,16 @@ inline QString uiTheme()
   return QStringLiteral("ui/theme");
 }
 
+inline QString mixerMetersMode()
+{
+  return QStringLiteral("mixer/metersMode");
+}
+
+inline QString mixerMetersStyle()
+{
+  return QStringLiteral("mixer/metersStyle");
+}
+
 inline QString visualizerRefreshIntervalMs()
 {
   return QStringLiteral("visualizer/refreshIntervalMs");

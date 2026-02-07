@@ -16,6 +16,8 @@ class QComboBox;
 class QLineEdit;
 class QPushButton;
 class QTimer;
+class QShowEvent;
+class QHideEvent;
 class PipeWireGraph;
 class QUndoStack;
 
@@ -31,6 +33,8 @@ public slots:
 
 protected:
   bool eventFilter(QObject* obj, QEvent* event) override;
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
 
 private:
   void scheduleRebuild();
@@ -64,6 +68,8 @@ private:
   QGraphicsView* m_view = nullptr;
   QLineEdit* m_filter = nullptr;
   QTimer* m_rebuildTimer = nullptr;
+  bool m_pendingRebuild = false;
+  bool m_windowFilterInstalled = false;
 
   QComboBox* m_profileCombo = nullptr;
   QCheckBox* m_profileStrict = nullptr;

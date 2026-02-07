@@ -5,6 +5,7 @@
 
 #include <QDialogButtonBox>
 #include <QComboBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -49,18 +50,76 @@ EngineDialog::EngineDialog(PipeWireGraph* graph, QWidget* parent)
   refresh();
 
   if (m_graph) {
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &EngineDialog::refreshClockUi);
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &EngineDialog::refreshDiagnosticsUi);
-    connect(m_graph, &PipeWireGraph::graphChanged, this, &EngineDialog::refreshMidiBridgeUi);
+    connect(m_graph, &PipeWireGraph::graphChanged, this, [this]() {
+      const bool minimized = windowState() & Qt::WindowMinimized;
+      if (isVisible() && !minimized) {
+        refreshClockUi();
+      }
+    });
+    connect(m_graph, &PipeWireGraph::graphChanged, this, [this]() {
+      const bool minimized = windowState() & Qt::WindowMinimized;
+      if (isVisible() && !minimized) {
+        refreshDiagnosticsUi();
+      }
+    });
+    connect(m_graph, &PipeWireGraph::graphChanged, this, [this]() {
+      const bool minimized = windowState() & Qt::WindowMinimized;
+      if (isVisible() && !minimized) {
+        refreshMidiBridgeUi();
+      }
+    });
 
     m_diagTimer = new QTimer(this);
     m_diagTimer->setInterval(250);
-    connect(m_diagTimer, &QTimer::timeout, this, &EngineDialog::refreshDiagnosticsUi);
-    m_diagTimer->start();
+    m_diagTimer->setTimerType(Qt::CoarseTimer);
+    connect(m_diagTimer, &QTimer::timeout, this, [this]() {
+      const bool minimized = windowState() & Qt::WindowMinimized;
+      if (isVisible() && !minimized) {
+        refreshDiagnosticsUi();
+      }
+    });
   }
 }
 
 EngineDialog::~EngineDialog() = default;
+
+void EngineDialog::showEvent(QShowEvent* event)
+{
+  QDialog::showEvent(event);
+  if (m_diagTimer && !m_diagTimer->isActive()) {
+    refreshDiagnosticsUi();
+    m_diagTimer->start();
+  }
+}
+
+void EngineDialog::hideEvent(QHideEvent* event)
+{
+  QDialog::hideEvent(event);
+  if (m_diagTimer) {
+    m_diagTimer->stop();
+  }
+}
+
+void EngineDialog::changeEvent(QEvent* event)
+{
+  QDialog::changeEvent(event);
+  if (!event || event->type() != QEvent::WindowStateChange) {
+    return;
+  }
+
+  const bool minimized = windowState() & Qt::WindowMinimized;
+  if (minimized) {
+    if (m_diagTimer) {
+      m_diagTimer->stop();
+    }
+    return;
+  }
+
+  if (isVisible() && m_diagTimer && !m_diagTimer->isActive()) {
+    refreshDiagnosticsUi();
+    m_diagTimer->start();
+  }
+}
 
 void EngineDialog::rebuildUi()
 {

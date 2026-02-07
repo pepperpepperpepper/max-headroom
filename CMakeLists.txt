@@ -15,15 +15,22 @@ set(CMAKE_AUTOUIC ON)
 option(HEADROOM_BUILD_TUI "Build headroom-tui (ncurses TUI)" ON)
 option(HEADROOM_BUILD_CLI "Build headroomctl (CLI)" ON)
 option(HEADROOM_BUILD_GUI "Build headroom (Qt GUI)" ON)
+option(HEADROOM_BUILD_TESTS "Build tests" ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core)
 if (HEADROOM_BUILD_GUI)
   find_package(Qt6 REQUIRED COMPONENTS Gui Widgets)
 endif()
+if (HEADROOM_BUILD_TESTS)
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET libpipewire-0.3)
 pkg_check_modules(SPA REQUIRED IMPORTED_TARGET libspa-0.2)
 pkg_check_modules(SNDFILE REQUIRED IMPORTED_TARGET sndfile)
+if (HEADROOM_BUILD_GUI)
+  pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
+endif()
 
 if (HEADROOM_BUILD_GUI)
   qt_add_executable(headroom
@@ -138,6 +145,7 @@ if (HEADROOM_BUILD_GUI)
       PkgConfig::PIPEWIRE
       PkgConfig::SPA
       PkgConfig::SNDFILE
+      PkgConfig::XCB
   )
 
   target_compile_options(headroom PRIVATE -Wall -Wextra -Wpedantic)
@@ -293,4 +301,9 @@ if (HEADROOM_BUILD_GUI)
   install(FILES resources/com.maxheadroom.Headroom.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
   install(FILES resources/com.maxheadroom.Headroom.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
   install(FILES resources/icons/com.maxheadroom.Headroom.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+endif()
+
+if (HEADROOM_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()

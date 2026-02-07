@@ -11,9 +11,11 @@
 #include <spa/param/param.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace {
 const char* stateToString(pw_stream_state state)
@@ -53,6 +55,10 @@ AudioLevelTap::AudioLevelTap(PipeWireThread* pw, QObject* parent)
     return;
   }
 
+  if (!m_enabled.load(std::memory_order_relaxed)) {
+    return;
+  }
+
   pw_thread_loop* loop = m_pw->threadLoop();
   pw_thread_loop_lock(loop);
   connectStreamLocked();
@@ -70,6 +76,54 @@ AudioLevelTap::~AudioLevelTap()
   pw_thread_loop_unlock(loop);
 }
 
+void AudioLevelTap::setComputeMode(ComputeMode mode)
+{
+  const uint8_t raw = static_cast<uint8_t>(mode);
+  if (raw == m_computeMode.load(std::memory_order_relaxed)) {
+    return;
+  }
+
+  m_computeMode.store(raw, std::memory_order_relaxed);
+  if (mode == ComputeMode::PeakOnly) {
+    m_rms.store(0.0f, std::memory_order_relaxed);
+  }
+
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
+    return;
+  }
+
+  pw_thread_loop* loop = m_pw->threadLoop();
+  pw_thread_loop_lock(loop);
+  destroyStreamLocked();
+  if (m_enabled.load(std::memory_order_relaxed)) {
+    connectStreamLocked();
+  }
+  pw_thread_loop_unlock(loop);
+}
+
+void AudioLevelTap::setEnabled(bool enabled)
+{
+  if (enabled == m_enabled.load(std::memory_order_relaxed)) {
+    return;
+  }
+  m_enabled.store(enabled, std::memory_order_relaxed);
+
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
+    return;
+  }
+
+  pw_thread_loop* loop = m_pw->threadLoop();
+  pw_thread_loop_lock(loop);
+
+  if (enabled) {
+    connectStreamLocked();
+  } else {
+    destroyStreamLocked();
+  }
+
+  pw_thread_loop_unlock(loop);
+}
+
 void AudioLevelTap::setCaptureSink(bool captureSink)
 {
   if (captureSink == m_captureSink.load(std::memory_order_relaxed)) {
@@ -77,14 +131,16 @@ void AudioLevelTap::setCaptureSink(bool captureSink)
   }
   m_captureSink.store(captureSink, std::memory_order_relaxed);
 
-  if (!m_pw || !m_pw->isConnected()) {
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
     return;
   }
 
   pw_thread_loop* loop = m_pw->threadLoop();
   pw_thread_loop_lock(loop);
   destroyStreamLocked();
-  connectStreamLocked();
+  if (m_enabled.load(std::memory_order_relaxed)) {
+    connectStreamLocked();
+  }
   pw_thread_loop_unlock(loop);
 }
 
@@ -108,14 +164,16 @@ void AudioLevelTap::setTargetObject(const QString& targetObject)
   }
   m_targetObject = targetObject;
 
-  if (!m_pw || !m_pw->isConnected()) {
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
     return;
   }
 
   pw_thread_loop* loop = m_pw->threadLoop();
   pw_thread_loop_lock(loop);
   destroyStreamLocked();
-  connectStreamLocked();
+  if (m_enabled.load(std::memory_order_relaxed)) {
+    connectStreamLocked();
+  }
   pw_thread_loop_unlock(loop);
 }
 
@@ -126,11 +184,13 @@ void AudioLevelTap::connectStreamLocked()
   }
 
   const QByteArray nodeName = QByteArray("headroom.meter.") + QByteArray::number(nextTapSerial());
+  const char* latency = (computeMode() == ComputeMode::PeakOnly) ? "2048/48000" : "1024/48000";
 
   pw_properties* props = pw_properties_new(
       PW_KEY_MEDIA_TYPE, "Audio",
       PW_KEY_MEDIA_CATEGORY, "Capture",
       PW_KEY_MEDIA_ROLE, "Monitor",
+      PW_KEY_NODE_LATENCY, latency,
       PW_KEY_NODE_NAME, nodeName.constData(),
       PW_KEY_NODE_DESCRIPTION, "Headroom Meter",
       PW_KEY_STREAM_MONITOR, "true",
@@ -239,6 +299,7 @@ void AudioLevelTap::onStreamProcess(void* data)
   if (!buffer) {
     return;
   }
+  self->m_lastProcessNs.store(nowNs(), std::memory_order_relaxed);
   self->processBuffer(buffer);
   pw_stream_queue_buffer(self->m_stream, buffer);
 }
@@ -249,55 +310,142 @@ void AudioLevelTap::processBuffer(pw_buffer* buffer)
     return;
   }
 
+  const bool computeRms = (computeMode() == ComputeMode::PeakAndRms);
+
   spa_buffer* b = buffer->buffer;
   if (b->n_datas < 1) {
     return;
   }
 
-  spa_data& d = b->datas[0];
-  if (!d.data || !d.chunk) {
-    return;
-  }
-
-  const uint8_t* base = static_cast<const uint8_t*>(d.data);
-  const uint32_t offset = d.chunk->offset;
-  const uint32_t size = d.chunk->size;
-  if (offset + size > d.maxsize) {
-    return;
-  }
-
-  const float* samples = reinterpret_cast<const float*>(base + offset);
-  const std::size_t nFloats = size / sizeof(float);
-  if (nFloats == 0) {
-    return;
-  }
-
-  // Compute on a mono mixdown of all negotiated channels.
+  // Compute on a mono mixdown of all negotiated channels. Prefer planar handling
+  // when PipeWire provides separate channel planes.
   const uint32_t ch = std::max<uint32_t>(1U, m_channels.load(std::memory_order_relaxed));
-  const std::size_t frames = nFloats / ch;
-  if (frames == 0) {
-    return;
-  }
 
   float peak = 0.0f;
   double sumSq = 0.0;
-  for (std::size_t f = 0; f < frames; ++f) {
-    float v = 0.0f;
-    for (uint32_t c = 0; c < ch; ++c) {
-      v += samples[f * ch + c];
-    }
-    v /= static_cast<float>(ch);
+  std::size_t frames = 0;
 
-    const float av = std::fabs(v);
-    if (av > peak) {
-      peak = av;
+  const bool maybePlanar = b->n_datas > 1;
+  if (maybePlanar) {
+    constexpr uint32_t kMaxPlanes = 32;
+    const uint32_t planes = std::max<uint32_t>(1U, std::min<uint32_t>(kMaxPlanes, std::min<uint32_t>(ch, b->n_datas)));
+
+    std::array<const float*, kMaxPlanes> planeSamples{};
+    std::size_t minFrames = std::numeric_limits<std::size_t>::max();
+    for (uint32_t i = 0; i < planes; ++i) {
+      spa_data& d = b->datas[i];
+      if (!d.data || !d.chunk) {
+        return;
+      }
+
+      const uint8_t* base = static_cast<const uint8_t*>(d.data);
+      const uint32_t offset = d.chunk->offset;
+      const uint32_t size = d.chunk->size;
+      if (offset + size > d.maxsize) {
+        return;
+      }
+
+      const float* samples = reinterpret_cast<const float*>(base + offset);
+      const std::size_t nFloats = size / sizeof(float);
+      if (nFloats == 0) {
+        return;
+      }
+
+      planeSamples[i] = samples;
+      minFrames = std::min(minFrames, nFloats);
     }
-    sumSq += static_cast<double>(v) * static_cast<double>(v);
+
+    frames = (minFrames == std::numeric_limits<std::size_t>::max()) ? 0 : minFrames;
+    if (frames == 0) {
+      return;
+    }
+
+    if (computeRms) {
+      for (std::size_t f = 0; f < frames; ++f) {
+        float v = 0.0f;
+        for (uint32_t c = 0; c < planes; ++c) {
+          v += planeSamples[c][f];
+        }
+        v /= static_cast<float>(planes);
+
+        const float av = std::fabs(v);
+        if (av > peak) {
+          peak = av;
+        }
+        sumSq += static_cast<double>(v) * static_cast<double>(v);
+      }
+    } else {
+      for (std::size_t f = 0; f < frames; ++f) {
+        float v = 0.0f;
+        for (uint32_t c = 0; c < planes; ++c) {
+          v += planeSamples[c][f];
+        }
+        v /= static_cast<float>(planes);
+
+        const float av = std::fabs(v);
+        if (av > peak) {
+          peak = av;
+        }
+      }
+    }
+  } else {
+    spa_data& d = b->datas[0];
+    if (!d.data || !d.chunk) {
+      return;
+    }
+
+    const uint8_t* base = static_cast<const uint8_t*>(d.data);
+    const uint32_t offset = d.chunk->offset;
+    const uint32_t size = d.chunk->size;
+    if (offset + size > d.maxsize) {
+      return;
+    }
+
+    const float* samples = reinterpret_cast<const float*>(base + offset);
+    const std::size_t nFloats = size / sizeof(float);
+    if (nFloats == 0) {
+      return;
+    }
+
+    frames = nFloats / ch;
+    if (frames == 0) {
+      return;
+    }
+
+    if (computeRms) {
+      for (std::size_t f = 0; f < frames; ++f) {
+        float v = 0.0f;
+        for (uint32_t c = 0; c < ch; ++c) {
+          v += samples[f * ch + c];
+        }
+        v /= static_cast<float>(ch);
+
+        const float av = std::fabs(v);
+        if (av > peak) {
+          peak = av;
+        }
+        sumSq += static_cast<double>(v) * static_cast<double>(v);
+      }
+    } else {
+      for (std::size_t f = 0; f < frames; ++f) {
+        float v = 0.0f;
+        for (uint32_t c = 0; c < ch; ++c) {
+          v += samples[f * ch + c];
+        }
+        v /= static_cast<float>(ch);
+
+        const float av = std::fabs(v);
+        if (av > peak) {
+          peak = av;
+        }
+      }
+    }
   }
 
-  const float rms = std::sqrt(sumSq / static_cast<double>(frames));
+  const float rms = (computeRms && frames > 0) ? std::sqrt(sumSq / static_cast<double>(frames)) : 0.0f;
   m_peak.store(peak, std::memory_order_relaxed);
   m_rms.store(rms, std::memory_order_relaxed);
+  m_lastProcessNs.store(nowNs(), std::memory_order_relaxed);
 
   if (peak >= 1.0f) {
     m_lastClipNs.store(nowNs(), std::memory_order_relaxed);

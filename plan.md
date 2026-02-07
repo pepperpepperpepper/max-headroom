@@ -39,6 +39,7 @@
 - Generate screenshots (GUI + tray + terminal; uses a temporary PipeWire instance + demo tone streams):
   - `./scripts/make_screenshots.sh`
   - Output: `screenshots/*.png` (includes `tui-*.png` for Outputs/Inputs/Streams/Patchbay/EQ/Recording/Status/Engine + `cli-commands.png`)
+  - Build selection: uses `HEADROOM_BUILD_DIR` if set; otherwise prefers `build_test/` (if present) and falls back to building `build/` (Release).
   - Note: `make_screenshots.sh` starts a *private* `dbus-daemon` + `pipewire` + `wireplumber` instance and prefers `snd-aloop` (when available) so the visualizers show real audio. If `snd-aloop` can’t be used, it falls back to a virtual null sink.
   - Audio source: prefers `testdata/audio/demo.opus` (gitignored) and falls back to generated sine tones if missing.
   - Terminal screenshots are captured via `Xvfb + xterm + xdotool + import` (best-effort; skipped if deps are missing).
@@ -50,6 +51,7 @@
 - One-link gallery page (recommended):
   - `./scripts/publish_screenshots.sh`
   - Regenerates `screenshots/*.png`, uploads them, generates a temporary `index.html` pointing at the uploaded images, then uploads that HTML (does not modify the repo’s `screenshots/index.html`).
+  - Latest published gallery (2026-02-05): https://tmp.uh-oh.wtf/2026/02/05/38c345a3-index.html
 
 ## Tray menu demo (more comprehensive)
 
@@ -89,15 +91,16 @@
 
 ### 0.0 (Testing) — now (blocker for release)
 
-- [ ] Add CTest wiring + `ctest` docs (local + CI).
-- [ ] Add a unit-test framework (Catch2 or QtTest) + baseline unit tests that run in CI.
-- [ ] Add a hermetic integration harness that launches a private `dbus-daemon` + `pipewire` + `wireplumber`, seeds a minimal graph, and exposes `XDG_RUNTIME_DIR`/`PIPEWIRE_REMOTE` to tests.
-- [ ] Add `headroomctl` contract tests (JSON shape + stable fields) for: `nodes`, `sinks`, `sources`, `ports`, `links`, `engine status`, `diagnostics`.
-- [ ] Add `headroomctl` integration tests for: `set-volume`/`mute`, `default-sink`/`default-source`, sink ordering (`sinks order ...`), patchbay connect/disconnect, profiles save/apply/delete, autoconnect enable/apply/rules, sessions save/apply/delete, EQ enable/preset, recording start/stop/status.
-- [ ] Add TUI smoke/E2E tests under `Xvfb` (navigation + hotkeys: defaults, reorder, connect/disconnect, EQ toggle) with deterministic artifacts.
-- [ ] Add GUI + tray smoke tests (offscreen launch, open key dialogs, tray demo run) — screenshot pipeline stays a required E2E pass, but add explicit “no-crash” assertions.
-- [ ] CI: add a workflow that runs unit tests + private-PipeWire integration tests on every PR/push (separate from the Flatpak build job).
-- [ ] Real PipeWire host validation: add a `scripts/host_test.sh` checklist runner (systemd user units, real devices, latency presets, MIDI bridge, recording with real audio) for the machine you’ll provide.
+- [x] Add CTest wiring + `ctest` docs (local).
+- [x] Add a unit-test framework (QtTest) + baseline unit tests.
+- [x] Add a hermetic integration harness that launches a private `dbus-daemon` + `pipewire` + `wireplumber`, seeds a minimal graph, and exposes `XDG_RUNTIME_DIR` to tests.
+- [x] Add `headroomctl` contract tests (JSON shape + stable fields) for: `nodes`, `sinks`, `sources`, `ports`, `links`.
+- [x] Add `headroomctl` contract tests (JSON shape + stable fields) for: `engine status`, `diagnostics`.
+- [x] Add `headroomctl` integration tests for: `set-volume`/`mute`, `default-sink`/`default-source`, sink ordering (`sinks order ...`), patchbay connect/disconnect, profiles save/apply/delete, autoconnect enable/apply/rules, sessions save/apply/delete, EQ enable/preset, recording start/stop/status.
+- [x] Add TUI smoke/E2E tests under `Xvfb` (navigation + hotkeys: defaults, reorder, connect/disconnect, EQ toggle) with deterministic artifacts (covered by `ctest` integration test `headroom_tui_smoke`).
+- [x] Add GUI + tray smoke tests (offscreen launch, open key dialogs, tray demo run) — screenshot pipeline stays a required E2E pass, but add explicit “no-crash” assertions (covered by `ctest` integration tests `headroom_gui_smoke_offscreen` + `headroom_tray_demo_smoke`).
+- [x] CI: add a workflow that runs unit tests + private-PipeWire integration tests on every PR/push (separate from the Flatpak build job).
+- [x] Real PipeWire host validation: add a `scripts/host_test.sh` checklist runner (systemd user units, real devices, latency presets, MIDI bridge, recording with real audio) for the machine you’ll provide.
 
 ### 0.1 (CLI / SSH) — top priority
 
@@ -153,10 +156,44 @@
 
 ## Next Up (ordered, actionable)
 
-- [ ] Tests: wire up CTest + unit test framework.
-- [ ] Tests: implement private PipeWire integration harness.
-- [ ] Tests: implement `headroomctl` command-matrix integration suite.
-- [ ] Tests: add TUI smoke/E2E tests under `Xvfb`.
-- [ ] Tests: add GUI/tray smoke tests (offscreen + tray demo).
-- [ ] Tests: add CI workflow to run the above on PRs.
-- [ ] Tests: run `scripts/host_test.sh` on a real PipeWire machine (systemd user units + real devices) and fix any gaps.
+- [x] Tests: wire up CTest + unit test framework.
+- [x] Tests: implement private PipeWire integration harness.
+- [x] Tests: implement `headroomctl` command-matrix integration suite.
+- [x] Tests: add TUI smoke/E2E tests under `Xvfb`.
+- [x] Tests: add GUI/tray smoke tests (offscreen + tray demo).
+- [x] Tests: add CI workflow to run the above on PRs.
+- [x] Tests: run `scripts/host_test.sh` on a real PipeWire machine (systemd user session + real devices) and fix any gaps (recommended: `./scripts/host_test.sh --run-gui-self-tests --efficiency-audit --efficiency-duration 300`; pass `--read-only` if you don’t want it to change audio state; avoid `sudo`).
+
+## Efficiency / Battery (next up)
+
+- Full notes: `power_measurement_plan.md` + `power_measurement_results.md`.
+- [x] HIGH: Add a real-X11 host automation script to run the visible→minimized→tray-only efficiency matrix (and assert meters/visualizer nodes stop + CPU/ctx stay ~0 while hidden), so we can regression-test battery behavior outside `QT_QPA_PLATFORM=offscreen`. (2026-02-05: `scripts/host_gui_efficiency_matrix.sh`; pepper@127.0.0.1:4444 full run out=`/tmp/headroom-gui-eff-matrix-20260205-052317`: visible meters=9 cpu_avg_pct=12.17; minimized/tray-only meters=0 cpu_avg_pct=0.00 ctx_max_per_s=1.)
+- [x] HIGH: Real-host validation — investigate why `headroom.meter.*` nodes don’t appear on `pepper@127.0.0.1:4444` under real X11 (even with `metersMode=3`), so “visible worst-case” and GUI self-tests are meaningful outside `QT_QPA_PLATFORM=offscreen`. (2026-02-04: fixed X11 map-state detection + ensured the main window is actually `IsViewable`; meter nodes now appear reliably on host when visible.)
+- [x] HIGH: Reduce “visible idle” CPU (2026-02-04 host matrix: ~1–2% while visible) by profiling and gating non-essential work (e.g., PipeWire profiler binding/sampling, UI timers/refresh) to the active tab or only when explicitly needed. (2026-02-04: root cause was `headroom.meter.*` node churn from topologyChanged-driven Mixer rebuild loops; fixed by suppressing topologyChanged emission for internal ephemeral nodes/ports/links. Host (AudioStim, window `IsViewable`): metersMode=3 dropped from cpu_avg_pct~29%/ctx~3785 to ~8.6%/ctx~141 (9 meters). Meters Off remains ~2%.)
+- [x] HIGH: Update `power_measurement_plan.md` to prefer the new real-host matrix script + “attach to existing :0” workflow (no “sudo start Xorg” assumption), and document robust main-window selection + close-to-tray semantics. (2026-02-05.)
+- [x] HIGH: Add a no-sudo “battery power rate” sampler (`scripts/host_power_rate_audit.sh`) to complement CPU/ctx (wakeups proxy) with real Watts from sysfs/upower. (2026-02-05.)
+- [x] HIGH: Wire `scripts/host_test.sh` option `--gui-efficiency-matrix` to run the real-X11 visible→minimized→tray-only matrix script when a display is available. (2026-02-05.)
+- [x] Efficiency: add “Meters: Off / Selected only / Visible rows / All” setting.
+- [x] Efficiency: add “Meter style: Simple (Peak) / Detailed (Peak+RMS)” setting + adaptive meter tick interval (reduces visible worst-case CPU; 2026-02-06 pepper host matrix visible cpu_avg_pct ~10.45 → ~6.77 with meters forced on).
+- [x] Efficiency: investigate shared meter tap design (avoid N meter streams for N rows).
+- [x] Efficiency: use `Qt::CoarseTimer` for non-critical periodic UI refresh.
+- [x] Efficiency: audit dialogs/pages for periodic refresh; stop timers while hidden.
+- [x] Efficiency: stop dialog refresh timers while minimized (Engine + Recording).
+- [x] Efficiency: suppress tray UI refresh while running tray-only (refresh on menu open / while window is visible).
+- [x] Efficiency: disable PipeWire profiler sampling while GUI is hidden/minimized (avoid background wakeups from module-profiler).
+- [x] Efficiency: debounce/batch TUI rapid volume key repeats (avoid blocking PipeWire writes).
+- [x] Efficiency: run a real-machine wakeups audit with Headroom hidden/tray-only for 5 minutes; confirm CPU ~0% and low wakeups (preferred: `powertop`; no-`sudo` alternative: `./scripts/host_efficiency_audit.sh --name headroom --duration 300`). (2026-02-02: pepper@127.0.0.1:4444, tray-only 300s: cpu_avg_pct=0.00, ctx_avg_per_s=0; no `headroom.meter.*`/`headroom.visualizer` nodes. 2026-02-05 rerun (AudioStim active): meters before hide=8, after hide=0; tray-only 300s: cpu_avg_pct=0.00, cpu_max_pct=0.00, ctx_total=7, ctx_max_per_s=1; no `headroom.meter.*`/`headroom.visualizer` nodes.)
+- [x] Efficiency: run a real-machine wakeups audit with Headroom **minimized** (not closed) for 5 minutes; confirm CPU ~0% and low wakeups, and no `headroom.meter.*`/`headroom.visualizer` nodes. (2026-02-02: pepper@127.0.0.1:4444, minimized 300s: cpu_avg_pct=0.00, ctx_avg_per_s=0; `headroom.meter.*` nodes present before minimize (8) and absent while minimized. 2026-02-05 rerun (AudioStim active): meters before minimize=9, after minimize=0; minimized 300s: cpu_avg_pct=0.00, cpu_max_pct=0.00, ctx_total=2, ctx_max_per_s=1; no `headroom.meter.*`/`headroom.visualizer` nodes.)
+- [x] Efficiency: add automated `ctest` regression tests for minimized-window low-power behavior (meters/visualizer). (2026-02-03: `headroom_gui_efficiency_meters_minimized`, `headroom_gui_efficiency_visualizer_minimized`.)
+
+### Efficiency acceptance checklist
+
+- [x] GUI hidden: no `headroom.meter.*` streams present (covered by `ctest` integration test `headroom_gui_efficiency_meters_hide`).
+- [x] GUI hidden: CPU stays low and stable (covered by `ctest` integration test `headroom_gui_efficiency_meters_hide`, which enforces a max CPU % while hidden).
+- [x] GUI hidden: no `headroom.visualizer` stream present (covered by `ctest` integration test `headroom_gui_efficiency_visualizer_hide`).
+- [x] GUI minimized: no `headroom.meter.*` streams present (covered by `ctest` integration test `headroom_gui_efficiency_meters_minimized`).
+- [x] GUI minimized: no `headroom.visualizer` stream present (covered by `ctest` integration test `headroom_gui_efficiency_visualizer_minimized`).
+- [x] GUI hidden/minimized: no profiler sampling (module-profiler) callbacks.
+- [x] Tray-only: no periodic tray refresh wakeups (refresh on menu open).
+- [x] TUI idle: no high-frequency redraw; input remains responsive (covered by `ctest` integration test `headroom_tui_efficiency_idle` + interaction coverage in `headroom_tui_smoke`).
+- [x] Mixer visible: meters work; UI remains responsive; no excessive flicker (covered by `ctest` integration test `headroom_gui_efficiency_meters_visible`).

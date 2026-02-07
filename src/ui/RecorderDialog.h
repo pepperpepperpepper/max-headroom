@@ -6,9 +6,12 @@
 class AudioRecorder;
 class PipeWireGraph;
 class QComboBox;
+class QEvent;
+class QHideEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QShowEvent;
 class QSpinBox;
 class QTimer;
 
@@ -21,6 +24,10 @@ public:
   ~RecorderDialog() override;
 
 private:
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
+  void changeEvent(QEvent* event) override;
+
   void rebuildTargets();
   void syncUi();
   void browseFile();
@@ -45,6 +52,7 @@ private:
   QLabel* m_previewLabel = nullptr;
   QLabel* m_errorLabel = nullptr;
   QTimer* m_statusTimer = nullptr;
+  bool m_pendingTargetRebuild = false;
 
   bool m_hasMetadataSnapshot = false;
   QString m_metadataSnapshotSummary;

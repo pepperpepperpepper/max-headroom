@@ -6,7 +6,10 @@
 
 class QLabel;
 class QComboBox;
+class QEvent;
+class QHideEvent;
 class QPushButton;
+class QShowEvent;
 class QTimer;
 class PipeWireGraph;
 
@@ -19,6 +22,10 @@ public:
   ~EngineDialog() override;
 
 private:
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
+  void changeEvent(QEvent* event) override;
+
   void rebuildUi();
   void refresh();
   void runAction(const QString& action, const QString& unit);

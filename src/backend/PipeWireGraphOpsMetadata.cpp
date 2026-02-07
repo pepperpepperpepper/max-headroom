@@ -1,8 +1,11 @@
 #include "PipeWireGraphInternal.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QRegularExpression>
 
-int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* key, const char* /*type*/, const char* value)
+int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* key, const char* type, const char* value)
 {
   auto* binding = static_cast<MetadataBinding*>(data);
   if (!binding || !binding->graph || !key) {
@@ -41,10 +44,27 @@ int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* 
     return out;
   };
 
+  const QByteArray t = QByteArray(type ? type : "");
+  const bool valueLooksJson = (value && value[0] == '{');
+  const bool isJson = t.contains("JSON") || valueLooksJson;
+
+  auto parseNameFromJson = [](const char* raw) -> QString {
+    if (!raw || raw[0] == '\0') {
+      return {};
+    }
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(raw), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+      return {};
+    }
+    const QJsonObject o = doc.object();
+    return o.value(QStringLiteral("name")).toString();
+  };
+
   bool changed = false;
   {
     std::lock_guard<std::mutex> lock(graph->m_mutex);
-    auto update = [&](std::optional<uint32_t>& slot) {
+    auto updateU32 = [&](std::optional<uint32_t>& slot) {
       const std::optional<uint32_t> parsed = parseU32(value);
       if (slot != parsed) {
         slot = parsed;
@@ -52,17 +72,43 @@ int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* 
       }
     };
 
+    auto updateDefaultDevice = [&](std::optional<uint32_t>& idSlot, QString& nameSlot) {
+      if (isJson) {
+        graph->m_defaultDevicesPreferJson = true;
+        const QString parsedName = parseNameFromJson(value);
+        if (nameSlot != parsedName) {
+          nameSlot = parsedName;
+          changed = true;
+        }
+        if (idSlot.has_value()) {
+          idSlot.reset();
+          changed = true;
+        }
+        return;
+      }
+
+      const std::optional<uint32_t> parsed = parseU32(value);
+      if (idSlot != parsed) {
+        idSlot = parsed;
+        changed = true;
+      }
+      if (!nameSlot.isEmpty()) {
+        nameSlot.clear();
+        changed = true;
+      }
+    };
+
     if (k == QStringLiteral("default.audio.sink")) {
-      update(graph->m_defaultAudioSinkId);
+      updateDefaultDevice(graph->m_defaultAudioSinkId, graph->m_defaultAudioSinkName);
     } else if (k == QStringLiteral("default.configured.audio.sink")) {
-      update(graph->m_configuredAudioSinkId);
+      updateDefaultDevice(graph->m_configuredAudioSinkId, graph->m_configuredAudioSinkName);
     } else if (k == QStringLiteral("default.audio.source")) {
-      update(graph->m_defaultAudioSourceId);
+      updateDefaultDevice(graph->m_defaultAudioSourceId, graph->m_defaultAudioSourceName);
     } else if (k == QStringLiteral("default.configured.audio.source")) {
-      update(graph->m_configuredAudioSourceId);
+      updateDefaultDevice(graph->m_configuredAudioSourceId, graph->m_configuredAudioSourceName);
     } else if (binding->name == QStringLiteral("settings")) {
       if (k == QStringLiteral("clock.rate")) {
-        update(graph->m_clockRate);
+        updateU32(graph->m_clockRate);
       } else if (k == QStringLiteral("clock.allowed-rates")) {
         const QString raw = QString::fromUtf8(value ? value : "");
         const QVector<uint32_t> parsed = parseAllowedRates(raw);
@@ -71,11 +117,11 @@ int PipeWireGraph::onMetadataProperty(void* data, uint32_t subject, const char* 
           changed = true;
         }
       } else if (k == QStringLiteral("clock.quantum")) {
-        update(graph->m_clockQuantum);
+        updateU32(graph->m_clockQuantum);
       } else if (k == QStringLiteral("clock.min-quantum")) {
-        update(graph->m_clockMinQuantum);
+        updateU32(graph->m_clockMinQuantum);
       } else if (k == QStringLiteral("clock.max-quantum")) {
-        update(graph->m_clockMaxQuantum);
+        updateU32(graph->m_clockMaxQuantum);
       } else if (k == QStringLiteral("clock.force-rate")) {
         const std::optional<uint32_t> v = parseU32(value);
         const std::optional<uint32_t> parsed = (v.has_value() && *v > 0) ? v : std::nullopt;

@@ -133,6 +133,8 @@ int handleGraphConnectionsCommand(const QString& cmd, QStringList args, PipeWire
       }
 
       std::optional<uint32_t> linkId;
+      std::optional<uint32_t> outPortId;
+      std::optional<uint32_t> inPortId;
       if (args.size() == 3) {
         linkId = parseNodeId(args.at(2));
         if (!linkId) {
@@ -140,9 +142,17 @@ int handleGraphConnectionsCommand(const QString& cmd, QStringList args, PipeWire
           exitCode = 2;
           break;
         }
+
+        for (const auto& candidate : graph.links()) {
+          if (candidate.id == *linkId) {
+            outPortId = candidate.outputPortId;
+            inPortId = candidate.inputPortId;
+            break;
+          }
+        }
       } else {
-        const auto outPortId = parseNodeId(args.at(2));
-        const auto inPortId = parseNodeId(args.at(3));
+        outPortId = parseNodeId(args.at(2));
+        inPortId = parseNodeId(args.at(3));
         if (!outPortId || !inPortId) {
           err << "headroomctl: disconnect expects <link-id> or <out-port-id> <in-port-id>\n";
           exitCode = 2;
@@ -189,6 +199,33 @@ int handleGraphConnectionsCommand(const QString& cmd, QStringList args, PipeWire
         break;
       }
 
+      {
+        // Ensure the destroy request is processed before exiting. Links are created with object.linger=true,
+        // so if the process terminates immediately the disconnect can appear flaky in practice/tests.
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 750) {
+          QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+
+          bool exists = false;
+          if (outPortId && inPortId) {
+            exists = linkByPorts(graph.links(), *outPortId, *inPortId).has_value();
+          } else {
+            for (const auto& candidate : graph.links()) {
+              if (candidate.id == *linkId) {
+                exists = true;
+                break;
+              }
+            }
+          }
+
+          if (!exists) {
+            break;
+          }
+          QThread::msleep(10);
+        }
+      }
+
       if (jsonOutput) {
         QJsonObject o;
         o.insert(QStringLiteral("ok"), true);
@@ -206,4 +243,3 @@ int handleGraphConnectionsCommand(const QString& cmd, QStringList args, PipeWire
   return exitCode;
 }
 } // namespace headroomctl
-

@@ -65,8 +65,23 @@ Build flags:
 - Disable GUI (build `headroomctl` / `headroom-tui` only): `-DHEADROOM_BUILD_GUI=OFF`
 - Disable TUI: `-DHEADROOM_BUILD_TUI=OFF`
 - Disable CLI: `-DHEADROOM_BUILD_CLI=OFF`
+- Disable tests: `-DHEADROOM_BUILD_TESTS=OFF`
 
 If your machine hangs/reboots during the compile, try limiting parallelism: `cmake --build build --parallel 1`
+
+## Tests
+
+```bash
+cmake -S . -B build -DHEADROOM_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+Real-host validation (PipeWire + systemd user session; avoid `sudo`):
+
+```bash
+./scripts/host_test.sh --run-gui-self-tests --efficiency-audit --efficiency-duration 300
+```
 
 ## CLI / SSH
 

@@ -1,6 +1,8 @@
 #include "PipeWireGraphInternal.h"
 
 #include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 
 #include <pipewire/core.h>
@@ -27,9 +29,15 @@ bool PipeWireGraph::setDefaultAudioSink(uint32_t nodeId)
   pw_thread_loop_lock(loop);
 
   MetadataBinding* binding = nullptr;
+  bool preferJson = false;
+  QString nodeName;
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     binding = m_defaultDeviceMetadata;
+    preferJson = m_defaultDevicesPreferJson;
+    if (const auto it = m_nodes.constFind(nodeId); it != m_nodes.cend()) {
+      nodeName = it.value().name;
+    }
   }
 
   if (!binding || !binding->metadata) {
@@ -37,9 +45,18 @@ bool PipeWireGraph::setDefaultAudioSink(uint32_t nodeId)
     return false;
   }
 
-  const QByteArray value = QByteArray::number(nodeId);
-  const int r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.sink", "Spa:Id", value.constData());
-  const int r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.sink", "Spa:Id", value.constData());
+  int r1 = 0;
+  int r2 = 0;
+  if (preferJson && !nodeName.isEmpty()) {
+    const QJsonObject o{{QStringLiteral("name"), nodeName}};
+    const QByteArray json = QJsonDocument(o).toJson(QJsonDocument::Compact);
+    r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.sink", "Spa:String:JSON", json.constData());
+    r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.sink", "Spa:String:JSON", json.constData());
+  } else {
+    const QByteArray value = QByteArray::number(nodeId);
+    r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.sink", "Spa:Id", value.constData());
+    r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.sink", "Spa:Id", value.constData());
+  }
 
   pw_thread_loop_unlock(loop);
   return r1 >= 0 && r2 >= 0;
@@ -55,9 +72,15 @@ bool PipeWireGraph::setDefaultAudioSource(uint32_t nodeId)
   pw_thread_loop_lock(loop);
 
   MetadataBinding* binding = nullptr;
+  bool preferJson = false;
+  QString nodeName;
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     binding = m_defaultDeviceMetadata;
+    preferJson = m_defaultDevicesPreferJson;
+    if (const auto it = m_nodes.constFind(nodeId); it != m_nodes.cend()) {
+      nodeName = it.value().name;
+    }
   }
 
   if (!binding || !binding->metadata) {
@@ -65,9 +88,18 @@ bool PipeWireGraph::setDefaultAudioSource(uint32_t nodeId)
     return false;
   }
 
-  const QByteArray value = QByteArray::number(nodeId);
-  const int r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.source", "Spa:Id", value.constData());
-  const int r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.source", "Spa:Id", value.constData());
+  int r1 = 0;
+  int r2 = 0;
+  if (preferJson && !nodeName.isEmpty()) {
+    const QJsonObject o{{QStringLiteral("name"), nodeName}};
+    const QByteArray json = QJsonDocument(o).toJson(QJsonDocument::Compact);
+    r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.source", "Spa:String:JSON", json.constData());
+    r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.source", "Spa:String:JSON", json.constData());
+  } else {
+    const QByteArray value = QByteArray::number(nodeId);
+    r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.source", "Spa:Id", value.constData());
+    r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.source", "Spa:Id", value.constData());
+  }
 
   pw_thread_loop_unlock(loop);
   return r1 >= 0 && r2 >= 0;
@@ -238,7 +270,43 @@ bool PipeWireGraph::setClockMaxQuantum(std::optional<uint32_t> quantum)
 bool PipeWireGraph::hasProfilerSupport() const
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-  return m_profilerBinding != nullptr && m_profilerBinding->profiler != nullptr;
+  return m_profilerId.has_value();
+}
+
+void PipeWireGraph::setProfilerEnabled(bool enabled)
+{
+  if (!m_pw || !m_pw->isConnected() || !m_pw->threadLoop()) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_profilerEnabledWanted = enabled;
+    return;
+  }
+
+  pw_thread_loop* loop = m_pw->threadLoop();
+  pw_thread_loop_lock(loop);
+
+  uint32_t wantId = 0;
+  uint32_t boundId = 0;
+  bool bound = false;
+
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_profilerEnabledWanted = enabled;
+    wantId = m_profilerId.value_or(0);
+    bound = (m_profilerBinding != nullptr && m_profilerBinding->profiler != nullptr);
+    boundId = bound ? m_profilerBinding->profilerId : 0;
+  }
+
+  if (enabled) {
+    if (!bound && wantId != 0) {
+      bindProfiler(wantId);
+    }
+  } else {
+    if (bound && boundId != 0) {
+      unbindProfiler(boundId);
+    }
+  }
+
+  pw_thread_loop_unlock(loop);
 }
 
 std::optional<PwProfilerSnapshot> PipeWireGraph::profilerSnapshot() const

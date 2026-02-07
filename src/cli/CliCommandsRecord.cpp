@@ -332,7 +332,13 @@ bool tryHandleRecordPipeWire(QCoreApplication& app, const QString& cmd, QStringL
             daemonArgs << (captureSink ? QStringLiteral("--sink") : QStringLiteral("--source"));
 
             qint64 pid = 0;
-            const bool ok = QProcess::startDetached(QCoreApplication::applicationFilePath(), daemonArgs, QString{}, &pid);
+            QProcess p;
+            p.setProgram(QCoreApplication::applicationFilePath());
+            p.setArguments(daemonArgs);
+            p.setProcessChannelMode(QProcess::SeparateChannels);
+            p.setStandardOutputFile(QProcess::nullDevice());
+            p.setStandardErrorFile(QProcess::nullDevice());
+            const bool ok = p.startDetached(&pid);
             if (!ok) {
               err << "headroomctl: failed to start detached recorder\n";
               exitCode = 1;

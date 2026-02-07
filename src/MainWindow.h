@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 
+#include <memory>
 #include <cstdint>
 #include <optional>
 
@@ -23,7 +24,13 @@ class QSystemTrayIcon;
 class QTimer;
 class QWidgetAction;
 class QCloseEvent;
+class QShowEvent;
+class QHideEvent;
+class QEvent;
 class LogStore;
+class QAbstractNativeEventFilter;
+
+class MainWindowX11MapEventFilter;
 
 class MainWindow final : public QMainWindow
 {
@@ -39,6 +46,9 @@ public:
 
 protected:
   void closeEvent(QCloseEvent* event) override;
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
+  void changeEvent(QEvent* event) override;
 
 private:
   void openSettings();
@@ -47,6 +57,7 @@ private:
   void openRecorder();
   void openLogs();
 
+  void scheduleLowPowerModeUpdate();
   void setupTray();
   uint32_t trayOutputNodeId() const;
   void scheduleTrayRefresh();
@@ -56,6 +67,9 @@ private:
   void applyTrayVolumePercent(int percent);
   void rebuildTrayProfilesMenu();
   void requestExitFromTray();
+  void updateLowPowerMode();
+
+  friend class MainWindowX11MapEventFilter;
 
   PipeWireThread* m_pw = nullptr;
   PipeWireGraph* m_graph = nullptr;
@@ -81,4 +95,10 @@ private:
 
   uint32_t m_traySoftMuteNodeId = 0;
   std::optional<float> m_traySoftMuteRestoreVolume;
+
+  bool m_windowHandleHooked = false;
+  bool m_profilerRequested = false;
+
+  bool m_lowPowerUpdatePending = false;
+  std::unique_ptr<QAbstractNativeEventFilter> m_nativeEventFilter;
 };

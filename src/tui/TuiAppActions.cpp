@@ -3,6 +3,7 @@
 #include "backend/EqManager.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <curses.h>
 
@@ -12,6 +13,76 @@ namespace tui_actions_internal {
 void handleDevicesKey(int ch, PipeWireGraph& graph, TuiState& state);
 void handlePatchbayKey(int ch, PipeWireGraph& graph, TuiState& state);
 } // namespace tui_actions_internal
+
+void flushPendingVolumeChanges(PipeWireGraph& graph, TuiState& state, bool force)
+{
+  if (!state.clock.isValid()) {
+    state.clock.start();
+  }
+  const int64_t nowMs = static_cast<int64_t>(state.clock.elapsed());
+
+  constexpr int64_t kMinSendIntervalMs = 80;
+  constexpr int64_t kDebounceMs = 160;
+  constexpr float kSyncedEps = 0.0025f;
+
+  bool sentAny = false;
+  for (auto it = state.volumeOverrides.begin(); it != state.volumeOverrides.end(); ++it) {
+    const uint32_t nodeId = it.key();
+    VolumeOverride& ov = it.value();
+    if (!ov.dirty && !force) {
+      continue;
+    }
+
+    const bool shouldSend = force || ov.lastSendMs == 0 || (nowMs - ov.lastSendMs >= kMinSendIntervalMs) ||
+        (ov.lastInputMs > 0 && (nowMs - ov.lastInputMs >= kDebounceMs));
+    if (!shouldSend) {
+      continue;
+    }
+
+    const bool ok = graph.setNodeVolume(nodeId, ov.value);
+    if (!ok) {
+      state.globalStatus = QStringLiteral("Failed to set volume.");
+      beep();
+      ov.dirty = false; // avoid hammering
+    } else {
+      ov.lastSendMs = nowMs;
+      ov.dirty = false;
+    }
+
+    sentAny = true;
+    if (!force) {
+      break;
+    }
+  }
+
+  // If nothing was sent and we're not forcing, we can still prune synced overrides.
+  (void)sentAny;
+
+  QVector<uint32_t> toRemove;
+  toRemove.reserve(state.volumeOverrides.size());
+  for (auto it = state.volumeOverrides.cbegin(); it != state.volumeOverrides.cend(); ++it) {
+    const uint32_t nodeId = it.key();
+    const VolumeOverride& ov = it.value();
+
+    const auto controlsOpt = graph.nodeControls(nodeId);
+    if (!controlsOpt.has_value()) {
+      continue;
+    }
+
+    if (std::fabs(controlsOpt->volume - ov.value) <= kSyncedEps) {
+      toRemove.push_back(nodeId);
+      continue;
+    }
+
+    if (!ov.dirty && ov.lastSendMs > 0 && (nowMs - ov.lastSendMs) > 1500) {
+      // Avoid leaving stale overrides around forever if the server never reports the new value.
+      toRemove.push_back(nodeId);
+    }
+  }
+  for (uint32_t nodeId : toRemove) {
+    state.volumeOverrides.remove(nodeId);
+  }
+}
 
 void tickRecordingTimer(AudioRecorder& recorder, TuiState& state)
 {
@@ -27,6 +98,7 @@ void tickRecordingTimer(AudioRecorder& recorder, TuiState& state)
                                   .arg(path)
                                   .arg(static_cast<qulonglong>(bytes))
                                   .arg(bytes == 0 ? QStringLiteral("  (no audio received; is a session manager/driver running?)") : QString{});
+      state.dirty = true;
       beep();
     }
   }
@@ -53,6 +125,7 @@ void refreshEngineStatusIfNeeded(TuiState& state)
 
     state.engineDirty = false;
     state.engineRefresh.restart();
+    state.dirty = true;
   }
 }
 
@@ -76,50 +149,65 @@ void handleTuiKey(int ch, PipeWireGraph& graph, EqManager& eq, AudioRecorder& re
   } else if (ch == '?' || ch == 'h' || ch == 'H') {
     state.showHelp = true;
   } else {
+    bool handledGlobal = false;
     switch (ch) {
     case 'q':
     case 'Q':
       state.running = false;
+      handledGlobal = true;
       break;
     case '\t': {
       const int next = static_cast<int>(state.page) + 1;
       state.page = pageFromIndex(next);
+      handledGlobal = true;
       break;
     }
     case KEY_F(1):
     case '1':
       state.page = Page::Outputs;
+      handledGlobal = true;
       break;
     case KEY_F(2):
     case '2':
       state.page = Page::Inputs;
+      handledGlobal = true;
       break;
     case KEY_F(3):
     case '3':
       state.page = Page::Streams;
+      handledGlobal = true;
       break;
     case KEY_F(4):
     case '4':
       state.page = Page::Patchbay;
+      handledGlobal = true;
       break;
     case KEY_F(5):
     case '5':
       state.page = Page::Eq;
+      handledGlobal = true;
       break;
     case KEY_F(6):
     case '6':
       state.page = Page::Recording;
+      handledGlobal = true;
       break;
     case KEY_F(7):
     case '7':
       state.page = Page::Status;
+      handledGlobal = true;
       break;
     case KEY_F(8):
     case '8':
       state.page = Page::Engine;
+      handledGlobal = true;
       break;
     default:
       break;
+    }
+
+    if (handledGlobal) {
+      return;
     }
 
     if (state.page == Page::Outputs || state.page == Page::Inputs || state.page == Page::Streams) {

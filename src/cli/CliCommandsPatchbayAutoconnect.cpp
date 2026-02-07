@@ -1,3 +1,4 @@
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -82,7 +83,41 @@ int handlePatchbayAutoconnectSubcommand(QStringList args, PipeWireGraph& graph, 
 
     if (sub2 == QStringLiteral("apply")) {
       const AutoConnectConfig cfg = loadCfg();
+      // Give the PipeWire registry time to populate (especially links), so apply can
+      // correctly report already-present links instead of re-creating them.
+      {
+        QElapsedTimer t;
+        t.start();
+        int lastCount = -1;
+        int stableTicks = 0;
+        while (t.elapsed() < 1200) {
+          const int count = graph.links().size();
+          if (count == lastCount) {
+            stableTicks += 1;
+          } else {
+            lastCount = count;
+            stableTicks = 0;
+          }
+          const bool haveTopology = !graph.nodes().isEmpty() && !graph.ports().isEmpty();
+          const bool haveLinks = count > 0;
+          if (stableTicks >= 2 && haveTopology && (haveLinks || t.elapsed() > 300)) {
+            break;
+          }
+          waitForGraph(60);
+        }
+      }
+      const int linksBefore = graph.links().size();
       const AutoConnectApplyResult r = applyAutoConnectRules(graph, cfg);
+      if (r.linksCreated > 0) {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 750) {
+          if (graph.links().size() >= (linksBefore + r.linksCreated)) {
+            break;
+          }
+          waitForGraph(60);
+        }
+      }
       if (jsonOutput) {
         QJsonObject o;
         o.insert(QStringLiteral("ok"), r.errors.isEmpty());
@@ -327,4 +362,3 @@ int handlePatchbayAutoconnectSubcommand(QStringList args, PipeWireGraph& graph, 
   return exitCode;
 }
 } // namespace headroomctl
-

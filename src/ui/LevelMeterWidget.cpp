@@ -1,8 +1,11 @@
 #include "LevelMeterWidget.h"
 
 #include "backend/AudioLevelTap.h"
+#include "ui/WindowVisibility.h"
 
+#include <QHideEvent>
 #include <QPainter>
+#include <QShowEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -23,7 +26,57 @@ LevelMeterWidget::LevelMeterWidget(QWidget* parent)
 
 void LevelMeterWidget::setTap(AudioLevelTap* tap)
 {
+  if (m_tap == tap) {
+    return;
+  }
+  if (m_tap) {
+    m_tap->setEnabled(false);
+  }
   m_tap = tap;
+  updateTapEnabled();
+}
+
+void LevelMeterWidget::setStyle(Style style)
+{
+  if (m_style == style) {
+    return;
+  }
+  m_style = style;
+  updateTapEnabled();
+  update();
+}
+
+void LevelMeterWidget::setActive(bool active)
+{
+  if (m_active == active) {
+    return;
+  }
+
+  m_active = active;
+  updateTapEnabled();
+
+  if (!m_active) {
+    m_peakNorm = 0.0f;
+    m_rmsNorm = 0.0f;
+    m_peakHoldNorm = 0.0f;
+    m_peakHoldTicks = 0;
+    m_clipped = false;
+    update();
+  }
+}
+
+bool LevelMeterWidget::isActive() const
+{
+  return m_active;
+}
+
+void LevelMeterWidget::updateTapEnabled()
+{
+  if (m_tap) {
+    m_tap->setComputeMode(
+        m_style == Style::SimplePeak ? AudioLevelTap::ComputeMode::PeakOnly : AudioLevelTap::ComputeMode::PeakAndRms);
+    m_tap->setEnabled(m_active && WindowVisibility::isActive(window()));
+  }
 }
 
 float LevelMeterWidget::amplitudeToDb(float amp)
@@ -42,20 +95,19 @@ float LevelMeterWidget::dbToNormalized(float db, float minDb)
 
 void LevelMeterWidget::tick()
 {
-  if (!m_tap) {
-    m_peakNorm = 0.0f;
-    m_rmsNorm = 0.0f;
-    m_peakHoldNorm = 0.0f;
-    m_peakHoldTicks = 0;
-    m_clipped = false;
-    update();
+  if (!m_active || !m_tap) {
     return;
   }
 
   const float peakDb = amplitudeToDb(m_tap->peak());
-  const float rmsDb = amplitudeToDb(m_tap->rms());
   const float peakTarget = dbToNormalized(peakDb, kMinDb);
-  const float rmsTarget = dbToNormalized(rmsDb, kMinDb);
+  const float rmsTarget = [&]() {
+    if (m_style == Style::DetailedPeakRms) {
+      const float rmsDb = amplitudeToDb(m_tap->rms());
+      return dbToNormalized(rmsDb, kMinDb);
+    }
+    return peakTarget;
+  }();
 
   // Attack fast, release slow.
   auto smooth = [](float current, float target) {
@@ -82,32 +134,65 @@ void LevelMeterWidget::tick()
   update();
 }
 
+void LevelMeterWidget::showEvent(QShowEvent* event)
+{
+  QWidget::showEvent(event);
+  updateTapEnabled();
+}
+
+void LevelMeterWidget::hideEvent(QHideEvent* event)
+{
+  QWidget::hideEvent(event);
+  updateTapEnabled();
+}
+
 void LevelMeterWidget::paintEvent(QPaintEvent* /*event*/)
 {
   QPainter p(this);
-  p.setRenderHint(QPainter::Antialiasing, true);
+  const bool detailed = (m_style == Style::DetailedPeakRms);
+  p.setRenderHint(QPainter::Antialiasing, detailed);
 
   QRect r = rect().adjusted(0, 0, -1, -1);
   p.setPen(Qt::NoPen);
   p.setBrush(QColor(18, 22, 30));
-  p.drawRoundedRect(r, 6, 6);
+  if (detailed) {
+    p.drawRoundedRect(r, 6, 6);
+  } else {
+    p.drawRect(r);
+  }
 
   QRect bar = r.adjusted(2, 2, -2, -2);
-  const int w = std::max(0, static_cast<int>(std::lround(bar.width() * m_rmsNorm)));
+  const float fillNorm = detailed ? m_rmsNorm : m_peakNorm;
+  const int w = std::max(0, static_cast<int>(std::lround(bar.width() * fillNorm)));
 
-  // RMS fill.
-  QLinearGradient g(bar.topLeft(), bar.topRight());
-  g.setColorAt(0.0, QColor(34, 197, 94));
-  g.setColorAt(0.7, QColor(234, 179, 8));
-  g.setColorAt(1.0, QColor(239, 68, 68));
+  if (detailed) {
+    // RMS fill.
+    QLinearGradient g(bar.topLeft(), bar.topRight());
+    g.setColorAt(0.0, QColor(34, 197, 94));
+    g.setColorAt(0.7, QColor(234, 179, 8));
+    g.setColorAt(1.0, QColor(239, 68, 68));
 
-  p.setBrush(g);
-  p.drawRoundedRect(QRect(bar.left(), bar.top(), w, bar.height()), 4, 4);
+    p.setBrush(g);
+    p.drawRoundedRect(QRect(bar.left(), bar.top(), w, bar.height()), 4, 4);
 
-  // Peak hold line.
-  const int px = bar.left() + static_cast<int>(std::lround(bar.width() * m_peakHoldNorm));
-  p.setPen(QPen(QColor(226, 232, 240), 1));
-  p.drawLine(px, bar.top(), px, bar.bottom());
+    // Peak hold line.
+    const int px = bar.left() + static_cast<int>(std::lround(bar.width() * m_peakHoldNorm));
+    p.setPen(QPen(QColor(226, 232, 240), 1));
+    p.drawLine(px, bar.top(), px, bar.bottom());
+  } else {
+    const QColor fill = [&]() {
+      if (fillNorm >= 0.90f) {
+        return QColor(239, 68, 68);
+      }
+      if (fillNorm >= 0.70f) {
+        return QColor(234, 179, 8);
+      }
+      return QColor(34, 197, 94);
+    }();
+
+    p.setBrush(fill);
+    p.drawRect(QRect(bar.left(), bar.top(), w, bar.height()));
+  }
 
   // Clip indicator.
   if (m_clipped) {
@@ -120,6 +205,9 @@ void LevelMeterWidget::paintEvent(QPaintEvent* /*event*/)
   // Border.
   p.setPen(QPen(QColor(51, 65, 85), 1));
   p.setBrush(Qt::NoBrush);
-  p.drawRoundedRect(r, 6, 6);
+  if (detailed) {
+    p.drawRoundedRect(r, 6, 6);
+  } else {
+    p.drawRect(r);
+  }
 }
-

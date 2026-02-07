@@ -7,6 +7,10 @@
 #include <spa/pod/iter.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 static QVector<const struct spa_pod*> collectStructItems(const struct spa_pod* pod)
 {
@@ -203,6 +207,23 @@ void PipeWireGraph::onProfilerProfile(void* data, const struct spa_pod* pod)
   auto* binding = static_cast<ProfilerBinding*>(data);
   if (!binding || !binding->graph || !pod) {
     return;
+  }
+
+  if (std::getenv("HEADROOM_DEBUG_PROFILER")) {
+    static std::atomic<uint64_t> s_calls{0};
+    static std::atomic<int64_t> s_lastLogNs{0};
+    s_calls.fetch_add(1, std::memory_order_relaxed);
+
+    const int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count();
+    int64_t expected = s_lastLogNs.load(std::memory_order_relaxed);
+    if (expected <= 0 || nowNs - expected >= 1'000'000'000LL) {
+      if (s_lastLogNs.compare_exchange_strong(expected, nowNs)) {
+        const uint64_t calls = s_calls.exchange(0, std::memory_order_relaxed);
+        std::fprintf(stderr, "headroom: debug: profiler callbacks last ~1s: %llu\n", static_cast<unsigned long long>(calls));
+      }
+    }
   }
 
   if (SPA_POD_TYPE(pod) != SPA_TYPE_Object) {

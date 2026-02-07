@@ -47,6 +47,7 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
                      QWidget* parent)
 {
   auto* row = new QWidget(parent);
+  row->setProperty("headroomMixerRow", true);
   auto* h = new QHBoxLayout(row);
   h->setContentsMargins(8, 6, 8, 6);
 
@@ -237,6 +238,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
                        QWidget* parent)
 {
   auto* row = new QWidget(parent);
+  row->setProperty("headroomMixerRow", true);
   auto* h = new QHBoxLayout(row);
   h->setContentsMargins(8, 6, 8, 6);
 

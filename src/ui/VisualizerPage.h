@@ -23,8 +23,10 @@ public slots:
 protected:
   void showEvent(QShowEvent* event) override;
   void hideEvent(QHideEvent* event) override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+  void updateTapEnabled();
   void repopulateSources();
 
   PipeWireGraph* m_graph = nullptr;
@@ -36,4 +38,5 @@ private:
   QString m_pendingTargetObject;
   bool m_pendingCaptureSink = false;
   bool m_hasPendingTarget = false;
+  bool m_windowFilterInstalled = false;
 };
