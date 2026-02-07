@@ -19,6 +19,7 @@ public:
 public slots:
   void setTapTarget(const QString& targetObject, bool captureSink);
   void applySettings(const VisualizerSettings& settings);
+  void updateForWindowVisibilityChange();
 
 protected:
   void showEvent(QShowEvent* event) override;

@@ -146,6 +146,11 @@ void VisualizerPage::applySettings(const VisualizerSettings& settings)
   }
 }
 
+void VisualizerPage::updateForWindowVisibilityChange()
+{
+  updateTapEnabled();
+}
+
 void VisualizerPage::showEvent(QShowEvent* event)
 {
   QWidget::showEvent(event);

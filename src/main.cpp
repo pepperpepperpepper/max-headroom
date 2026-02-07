@@ -172,6 +172,10 @@ int main(int argc, char** argv)
               handle ? static_cast<int>(handle->visibility()) : -1,
               WindowVisibility::isActive(&window) ? 1 : 0);
         }
+        if (!window.isVisible()) {
+          // Don't fight intentional hide/close-to-tray.
+          return;
+        }
         if (window.windowState() & Qt::WindowMinimized) {
           return;
         }

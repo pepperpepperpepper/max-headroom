@@ -289,6 +289,9 @@ void MainWindow::updateLowPowerMode()
   if (m_mixerPage) {
     QTimer::singleShot(0, m_mixerPage, &MixerPage::updateForWindowVisibilityChange);
   }
+  if (m_visualizerPage) {
+    QTimer::singleShot(0, m_visualizerPage, &VisualizerPage::updateForWindowVisibilityChange);
+  }
 }
 
 void MainWindow::setVisualizerTapTarget(const QString& targetObject, bool captureSink)
