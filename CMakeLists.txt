@@ -61,6 +61,8 @@ if (HEADROOM_BUILD_GUI)
     src/backend/PatchbayPortConfig.h
     src/backend/PatchbayAutoConnectController.cpp
     src/backend/PatchbayAutoConnectController.h
+    src/backend/PatchbayPersistentProfileController.cpp
+    src/backend/PatchbayPersistentProfileController.h
     src/backend/SessionSnapshots.cpp
     src/backend/SessionSnapshotsApply.cpp
     src/backend/SessionSnapshotsSerialize.cpp

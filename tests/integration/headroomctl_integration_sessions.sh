@@ -21,11 +21,23 @@ command -v jq >/dev/null 2>&1 || { echo "Missing dependency: jq" >&2; exit 1; }
   "$HEADROOMCTL" default-source set Headroom-TestSource --json | jq -e '"'"'.ok == true'"'"' >/dev/null
   "$HEADROOMCTL" eq preset Headroom-TestSink Flat --json | jq -e '"'"'.ok == true'"'"' >/dev/null
 
+  "$HEADROOMCTL" engine clock set --rate 48000 --quantum 256 --min-quantum 128 --max-quantum 1024 --json \
+    | jq -e '"'"'.ok == true and (.clock.forceRate == 48000) and (.clock.forceQuantum == 256) and (.clock.minQuantum == 128) and (.clock.maxQuantum == 1024)'"'"' >/dev/null
+
   "$HEADROOMCTL" session list --json | jq -e '"'"'type == "array"'"'"' >/dev/null
-  "$HEADROOMCTL" session save "$snap" --json | jq -e '"'"'.ok == true and .name == "'"'"'"$snap"'"'"'"'"'"' >/dev/null
+  "$HEADROOMCTL" session save "$snap" --json \
+    | jq -e '"'"'.ok == true and .name == "'"'"'"$snap"'"'"'" and (.clock.captured == true) and (.clock.forceRate == 48000) and (.clock.forceQuantum == 256) and (.clock.minQuantum == 128) and (.clock.maxQuantum == 1024)'"'"' >/dev/null
   "$HEADROOMCTL" session list --json | jq -e '"'"'any(.[]; . == "'"'"'"$snap"'"'"'")'"'"' >/dev/null
-  "$HEADROOMCTL" session apply "$snap" --json | jq -e '"'"'.ok == true and .name == "'"'"'"$snap"'"'"'" and (.patchbay | type == "object")'"'"' >/dev/null
+
+  "$HEADROOMCTL" engine clock set --rate auto --quantum auto --min-quantum auto --max-quantum auto --json \
+    | jq -e '"'"'.ok == true and (.clock.forceRate == null) and (.clock.forceQuantum == null) and (.clock.minQuantum == null) and (.clock.maxQuantum == null)'"'"' >/dev/null
+
+  "$HEADROOMCTL" session apply "$snap" --json \
+    | jq -e '"'"'.ok == true and .name == "'"'"'"$snap"'"'"'" and (.patchbay | type == "object") and (.clockRequested == true) and (.clockSet == true)'"'"' >/dev/null
+
+  "$HEADROOMCTL" engine clock status --json \
+    | jq -e '"'"'.ok == true and (.clock.forceRate == 48000) and (.clock.forceQuantum == 256) and (.clock.minQuantum == 128) and (.clock.maxQuantum == 1024)'"'"' >/dev/null
+
   "$HEADROOMCTL" session delete "$snap" --json | jq -e '"'"'.ok == true and .name == "'"'"'"$snap"'"'"'"'"'"' >/dev/null
   "$HEADROOMCTL" session list --json | jq -e '"'"'all(.[]; . != "'"'"'"$snap"'"'"'")'"'"' >/dev/null
 ' bash "$HEADROOMCTL"
-

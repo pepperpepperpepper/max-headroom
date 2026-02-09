@@ -35,7 +35,39 @@ SessionSnapshotApplyResult applySessionSnapshot(PipeWireGraph& graph,
 {
   SessionSnapshotApplyResult res;
 
-  // Apply patchbay links first.
+  // Restore clock overrides first (best-effort), so subsequent graph/session work
+  // happens at the desired quantum/rate where possible.
+  if (snapshot.hasClockOverrides) {
+    res.clockRequested = true;
+    if (!graph.hasClockSettingsSupport()) {
+      res.errors.push_back(QStringLiteral("PipeWire clock controls unavailable; cannot set clock overrides"));
+    } else {
+      bool okAll = true;
+      const bool okRate = graph.setClockForceRate(snapshot.clockForceRate);
+      if (!okRate) {
+        okAll = false;
+        res.errors.push_back(QStringLiteral("Failed to set clock force rate"));
+      }
+      const bool okQuantum = graph.setClockForceQuantum(snapshot.clockForceQuantum);
+      if (!okQuantum) {
+        okAll = false;
+        res.errors.push_back(QStringLiteral("Failed to set clock force quantum"));
+      }
+      const bool okMin = graph.setClockMinQuantum(snapshot.clockMinQuantum);
+      if (!okMin) {
+        okAll = false;
+        res.errors.push_back(QStringLiteral("Failed to set clock min quantum"));
+      }
+      const bool okMax = graph.setClockMaxQuantum(snapshot.clockMaxQuantum);
+      if (!okMax) {
+        okAll = false;
+        res.errors.push_back(QStringLiteral("Failed to set clock max quantum"));
+      }
+      res.clockSet = okAll;
+    }
+  }
+
+  // Apply patchbay links.
   PatchbayProfile p;
   p.name = snapshot.name;
   p.links = snapshot.links;
@@ -110,4 +142,3 @@ SessionSnapshotApplyResult applySessionSnapshot(PipeWireGraph& graph,
 
   return res;
 }
-

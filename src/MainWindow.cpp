@@ -20,6 +20,7 @@
 #include "backend/EqManager.h"
 #include "backend/LogStore.h"
 #include "backend/PatchbayAutoConnectController.h"
+#include "backend/PatchbayPersistentProfileController.h"
 #include "backend/PatchbayProfileHooks.h"
 #include "backend/PipeWireGraph.h"
 #include "backend/PipeWireThread.h"
@@ -95,6 +96,7 @@ MainWindow::MainWindow(LogStore* logs, QWidget* parent)
   m_recorder = new AudioRecorder(m_pw, this);
   m_eq = new EqManager(m_pw, m_graph, this);
   m_autoConnect = new PatchbayAutoConnectController(m_graph, this);
+  m_patchbayPersistent = new PatchbayPersistentProfileController(m_graph, this);
 
   m_tabs = new QTabWidget(this);
   m_mixerPage = new MixerPage(m_pw, m_graph, m_eq, this);

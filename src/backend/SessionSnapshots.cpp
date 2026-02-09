@@ -239,6 +239,16 @@ SessionSnapshot snapshotSession(const QString& snapshotName, const PipeWireGraph
     }
   }
 
+  // Clock overrides (best-effort).
+  if (graph.hasClockSettingsSupport()) {
+    snap.hasClockOverrides = true;
+    const PwClockSettings cs = graph.clockSettings();
+    snap.clockForceRate = cs.forceRate;
+    snap.clockForceQuantum = cs.forceQuantum;
+    snap.clockMinQuantum = cs.minQuantum;
+    snap.clockMaxQuantum = cs.maxQuantum;
+  }
+
   // EQ presets (store effective presets for sinks + sources).
   for (const auto& node : graph.nodes()) {
     if (node.mediaClass != QStringLiteral("Audio/Sink") && node.mediaClass != QStringLiteral("Audio/Source")) {

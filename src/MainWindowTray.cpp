@@ -20,7 +20,9 @@
 
 #include "backend/PatchbayProfileHooks.h"
 #include "backend/PatchbayProfiles.h"
+#include "backend/EqManager.h"
 #include "backend/PipeWireGraph.h"
+#include "backend/SessionSnapshots.h"
 #include "settings/SettingsKeys.h"
 #include "ui/MixerPage.h"
 #include "ui/PatchbayPage.h"
@@ -101,6 +103,9 @@ void MainWindow::setupTray()
   m_trayProfilesMenu = m_trayMenu->addMenu(tr("Profiles"));
   connect(m_trayProfilesMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildTrayProfilesMenu);
 
+  m_traySessionsMenu = m_trayMenu->addMenu(tr("Sessions"));
+  connect(m_traySessionsMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildTraySessionsMenu);
+
   m_trayMenu->addSeparator();
 
   auto* quitAction = m_trayMenu->addAction(tr("Quit"));
@@ -150,7 +155,8 @@ void MainWindow::scheduleTrayRefresh()
     // shown or while the tray menu is open, but otherwise rely on aboutToShow refresh.
     const bool windowActive = WindowVisibility::isActive(this);
     const bool menuActive = (m_trayMenu && m_trayMenu->isVisible())
-        || (m_trayProfilesMenu && m_trayProfilesMenu->isVisible());
+        || (m_trayProfilesMenu && m_trayProfilesMenu->isVisible())
+        || (m_traySessionsMenu && m_traySessionsMenu->isVisible());
     if (!windowActive && !menuActive) {
       return;
     }
@@ -356,6 +362,67 @@ void MainWindow::rebuildTrayProfilesMenu()
       }
       if (m_tray) {
         m_tray->showMessage(tr("Headroom"), msg, QSystemTrayIcon::Information);
+      }
+    });
+  }
+}
+
+void MainWindow::rebuildTraySessionsMenu()
+{
+  if (!m_traySessionsMenu) {
+    return;
+  }
+
+  m_traySessionsMenu->clear();
+
+  QSettings s;
+  const QStringList names = SessionSnapshotStore::listSnapshotNames(s);
+
+  if (names.isEmpty()) {
+    auto* none = m_traySessionsMenu->addAction(tr("(no sessions)"));
+    none->setEnabled(false);
+    return;
+  }
+
+  for (const auto& name : names) {
+    auto* a = m_traySessionsMenu->addAction(name);
+    connect(a, &QAction::triggered, this, [this, name]() {
+      if (!m_graph) {
+        return;
+      }
+
+      QSettings s;
+      const auto snap = SessionSnapshotStore::load(s, name);
+      if (!snap) {
+        if (m_tray) {
+          m_tray->showMessage(tr("Headroom"), tr("Session \"%1\" could not be loaded.").arg(name), QSystemTrayIcon::Warning);
+        }
+        return;
+      }
+
+      const bool strictLinks = false;
+      const bool strictSettings = true;
+      const SessionSnapshotApplyResult r = applySessionSnapshot(*m_graph, s, *snap, strictLinks, strictSettings);
+
+      if (m_eq) {
+        m_eq->refresh();
+      }
+      if (m_mixerPage) {
+        m_mixerPage->refresh();
+      }
+      if (m_patchbayPage) {
+        m_patchbayPage->refresh();
+      }
+
+      QString msg = tr("Applied session \"%1\".\nPatchbay: +%2, missing %3.")
+                        .arg(name)
+                        .arg(r.patchbay.createdLinks)
+                        .arg(r.patchbay.missingEndpoints);
+      if (!r.errors.isEmpty()) {
+        msg += tr("\nErrors: %1").arg(r.errors.size());
+      }
+      if (m_tray) {
+        m_tray->showMessage(tr("Headroom"), msg, r.errors.isEmpty() ? QSystemTrayIcon::Information : QSystemTrayIcon::Warning);
       }
     });
   }

@@ -28,6 +28,13 @@ QString summaryForApply(const QString& name, const SessionSnapshotApplyResult& r
   summary += QObject::tr("  disconnected: %1\n").arg(r.patchbay.disconnectedLinks);
   summary += QObject::tr("  missing endpoints: %1\n").arg(r.patchbay.missingEndpoints);
 
+  summary += QObject::tr("\nClock:\n");
+  if (r.clockRequested) {
+    summary += QObject::tr("  overrides: %1\n").arg(r.clockSet ? QObject::tr("set") : QObject::tr("not set"));
+  } else {
+    summary += QObject::tr("  overrides: (not in snapshot)\n");
+  }
+
   summary += QObject::tr("\nDefaults:\n");
   if (r.defaultSinkRequested) {
     summary += QObject::tr("  output: %1\n").arg(r.defaultSinkSet ? QObject::tr("set") : QObject::tr("not set"));
@@ -60,7 +67,7 @@ SessionsDialog::SessionsDialog(PipeWireGraph* graph, QWidget* parent)
 
   auto* intro = new QLabel(
       tr("Sessions are named snapshots of your setup:\n"
-         "patchbay links, default input/output, per-device EQ, and layout (device order + patchbay node positions)."),
+         "clock overrides, patchbay links, default input/output, per-device EQ, and layout (device order + patchbay node positions)."),
       this);
   intro->setWordWrap(true);
   root->addWidget(intro);

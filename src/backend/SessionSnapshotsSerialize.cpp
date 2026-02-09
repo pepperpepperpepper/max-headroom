@@ -9,6 +9,7 @@
 #include <QSettings>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 constexpr const char* kSnapshotDisplayNameKey = "displayName";
@@ -118,10 +119,34 @@ QHash<QString, QString> positionsFromJson(const QJsonObject& o)
   return out;
 }
 
+QJsonValue optU32ToJson(const std::optional<uint32_t>& v)
+{
+  if (!v.has_value()) {
+    return QJsonValue(QJsonValue::Null);
+  }
+  return QJsonValue(static_cast<qint64>(*v));
+}
+
+std::optional<uint32_t> optU32FromJson(const QJsonValue& v)
+{
+  if (!v.isDouble()) {
+    return std::nullopt;
+  }
+  const double d = v.toDouble();
+  if (!(d > 0.0) || d > static_cast<double>(std::numeric_limits<uint32_t>::max())) {
+    return std::nullopt;
+  }
+  const uint32_t u = static_cast<uint32_t>(d);
+  if (static_cast<double>(u) != d) {
+    return std::nullopt;
+  }
+  return u;
+}
+
 QJsonObject snapshotToJson(const SessionSnapshot& snapshot)
 {
   QJsonObject root;
-  root.insert(QStringLiteral("version"), 1);
+  root.insert(QStringLiteral("version"), 2);
 
   QJsonObject patchbay;
   patchbay.insert(QStringLiteral("links"), linksToJson(snapshot.links));
@@ -131,6 +156,15 @@ QJsonObject snapshotToJson(const SessionSnapshot& snapshot)
   defaults.insert(QStringLiteral("sink"), snapshot.defaultSinkName);
   defaults.insert(QStringLiteral("source"), snapshot.defaultSourceName);
   root.insert(QStringLiteral("defaults"), defaults);
+
+  if (snapshot.hasClockOverrides) {
+    QJsonObject clock;
+    clock.insert(QStringLiteral("forceRate"), optU32ToJson(snapshot.clockForceRate));
+    clock.insert(QStringLiteral("forceQuantum"), optU32ToJson(snapshot.clockForceQuantum));
+    clock.insert(QStringLiteral("minQuantum"), optU32ToJson(snapshot.clockMinQuantum));
+    clock.insert(QStringLiteral("maxQuantum"), optU32ToJson(snapshot.clockMaxQuantum));
+    root.insert(QStringLiteral("clock"), clock);
+  }
 
   root.insert(QStringLiteral("eq"), eqMapToJson(snapshot.eqByNodeName));
 
@@ -158,6 +192,15 @@ SessionSnapshot snapshotFromJson(const QString& snapshotName, const QJsonObject&
   const QJsonObject defaults = root.value(QStringLiteral("defaults")).toObject();
   snapshot.defaultSinkName = defaults.value(QStringLiteral("sink")).toString();
   snapshot.defaultSourceName = defaults.value(QStringLiteral("source")).toString();
+
+  if (const QJsonValue clockV = root.value(QStringLiteral("clock")); clockV.isObject()) {
+    const QJsonObject clock = clockV.toObject();
+    snapshot.hasClockOverrides = true;
+    snapshot.clockForceRate = optU32FromJson(clock.value(QStringLiteral("forceRate")));
+    snapshot.clockForceQuantum = optU32FromJson(clock.value(QStringLiteral("forceQuantum")));
+    snapshot.clockMinQuantum = optU32FromJson(clock.value(QStringLiteral("minQuantum")));
+    snapshot.clockMaxQuantum = optU32FromJson(clock.value(QStringLiteral("maxQuantum")));
+  }
 
   snapshot.eqByNodeName = eqMapFromJson(root.value(QStringLiteral("eq")).toObject());
 
@@ -250,4 +293,3 @@ bool SessionSnapshotStore::remove(QSettings& s, const QString& snapshotName)
   s.endGroup();
   return true;
 }
-

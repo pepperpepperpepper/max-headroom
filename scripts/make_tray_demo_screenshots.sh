@@ -445,8 +445,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
-    menu_set_slider_pct 30 || true
-    menu_hover_row_ratio 40 || true
+    sleep 0.35
     capture_root_until_hash_differs "$BASELINE_HASH" "$OUT_DIR/tray-menu-vol30.png"
     menu_close
     VOL30_HASH="$(sha256sum "$OUT_DIR/tray-menu-vol30.png" | awk "{print \$1}")"
@@ -460,8 +459,7 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
-    menu_set_slider_pct 80 || true
-    menu_hover_row_ratio 92 || true
+    sleep 0.35
     capture_root_until_hash_differs "$VOL30_HASH" "$OUT_DIR/tray-menu-vol80.png"
     menu_close
 

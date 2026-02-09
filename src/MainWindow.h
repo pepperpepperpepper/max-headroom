@@ -16,6 +16,7 @@ class AudioTap;
 class AudioRecorder;
 class EqManager;
 class PatchbayAutoConnectController;
+class PatchbayPersistentProfileController;
 class QAction;
 class QLabel;
 class QMenu;
@@ -66,6 +67,7 @@ private:
   void toggleTrayMute();
   void applyTrayVolumePercent(int percent);
   void rebuildTrayProfilesMenu();
+  void rebuildTraySessionsMenu();
   void requestExitFromTray();
   void updateLowPowerMode();
 
@@ -77,6 +79,7 @@ private:
   AudioRecorder* m_recorder = nullptr;
   EqManager* m_eq = nullptr;
   PatchbayAutoConnectController* m_autoConnect = nullptr;
+  PatchbayPersistentProfileController* m_patchbayPersistent = nullptr;
   LogStore* m_logs = nullptr;
   QTabWidget* m_tabs = nullptr;
   MixerPage* m_mixerPage = nullptr;
@@ -87,6 +90,7 @@ private:
   QSystemTrayIcon* m_tray = nullptr;
   QMenu* m_trayMenu = nullptr;
   QMenu* m_trayProfilesMenu = nullptr;
+  QMenu* m_traySessionsMenu = nullptr;
   QAction* m_trayMuteAction = nullptr;
   QWidgetAction* m_trayVolumeAction = nullptr;
   QSlider* m_trayVolumeSlider = nullptr;

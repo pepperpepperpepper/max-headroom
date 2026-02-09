@@ -197,3 +197,12 @@
 - [x] Tray-only: no periodic tray refresh wakeups (refresh on menu open).
 - [x] TUI idle: no high-frequency redraw; input remains responsive (covered by `ctest` integration test `headroom_tui_efficiency_idle` + interaction coverage in `headroom_tui_smoke`).
 - [x] Mixer visible: meters work; UI remains responsive; no excessive flicker (covered by `ctest` integration test `headroom_gui_efficiency_meters_visible`).
+
+## High priority (next)
+
+- [x] HIGH: Sessions: store/restore PipeWire clock overrides (force rate/quantum, min/max quantum) in snapshots; apply best-effort; surface in GUI summary + `headroomctl --json`. (2026-02-08: implemented + integration coverage in `headroomctl_integration_sessions`.)
+- [x] HIGH: Patchbay: persistent patchbay mode (auto-enforce active patchbay profile on topology changes; debounced; safe/no-churn). (2026-02-09: `PatchbayPersistentProfileController` debounced on `topologyChanged`; re-applies active profile non-strict with a short cooldown to avoid churn/duplicates.)
+- [x] HIGH: Tray: add a “Sessions” submenu (quick apply), similar to Patchbay profiles. (2026-02-09: tray menu lists snapshots and applies via `applySessionSnapshot` with `strictLinks=false` + `strictSettings=true`.)
+- [ ] P1: Diagnostics: persistent XRUN/CPU indicator (status bar + tray tooltip) and optional notification on xrun while visible.
+- [ ] P2: Graph UX: node/port inspector panel (IDs, props, generate `headroomctl` commands, quick link/unlink actions).
+- [ ] P2: Graph UX: “Connections” list/matrix view alternative to the graph canvas.

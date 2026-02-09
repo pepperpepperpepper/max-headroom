@@ -120,9 +120,19 @@ bool tryHandleSessionCommand(const QString& cmd, QStringList args, PipeWireGraph
             o.insert(QStringLiteral("links"), static_cast<int>(snap.links.size()));
             o.insert(QStringLiteral("eqNodes"), static_cast<int>(snap.eqByNodeName.size()));
             o.insert(QStringLiteral("positions"), static_cast<int>(snap.patchbayPositionByNodeName.size()));
+            QJsonObject clock;
+            clock.insert(QStringLiteral("captured"), snap.hasClockOverrides);
+            if (snap.hasClockOverrides) {
+              clock.insert(QStringLiteral("forceRate"), snap.clockForceRate.has_value() ? QJsonValue(static_cast<qint64>(*snap.clockForceRate)) : QJsonValue());
+              clock.insert(QStringLiteral("forceQuantum"),
+                           snap.clockForceQuantum.has_value() ? QJsonValue(static_cast<qint64>(*snap.clockForceQuantum)) : QJsonValue());
+              clock.insert(QStringLiteral("minQuantum"), snap.clockMinQuantum.has_value() ? QJsonValue(static_cast<qint64>(*snap.clockMinQuantum)) : QJsonValue());
+              clock.insert(QStringLiteral("maxQuantum"), snap.clockMaxQuantum.has_value() ? QJsonValue(static_cast<qint64>(*snap.clockMaxQuantum)) : QJsonValue());
+            }
+            o.insert(QStringLiteral("clock"), clock);
             out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
           } else {
-            out << "saved\t" << snap.name << "\tlinks=" << snap.links.size() << "\n";
+            out << "saved\t" << snap.name << "\tlinks=" << snap.links.size() << "\tclock=" << (snap.hasClockOverrides ? "yes" : "no") << "\n";
           }
           exitCode = 0;
           break;
@@ -164,6 +174,8 @@ bool tryHandleSessionCommand(const QString& cmd, QStringList args, PipeWireGraph
             patchbay.insert(QStringLiteral("disconnectedLinks"), r.patchbay.disconnectedLinks);
             patchbay.insert(QStringLiteral("missingEndpoints"), r.patchbay.missingEndpoints);
             o.insert(QStringLiteral("patchbay"), patchbay);
+            o.insert(QStringLiteral("clockRequested"), r.clockRequested);
+            o.insert(QStringLiteral("clockSet"), r.clockSet);
             o.insert(QStringLiteral("defaultSinkRequested"), r.defaultSinkRequested);
             o.insert(QStringLiteral("defaultSinkSet"), r.defaultSinkSet);
             o.insert(QStringLiteral("defaultSourceRequested"), r.defaultSourceRequested);
@@ -180,8 +192,9 @@ bool tryHandleSessionCommand(const QString& cmd, QStringList args, PipeWireGraph
             o.insert(QStringLiteral("errors"), errors);
             out << QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)) << "\n";
           } else {
-            out << "applied\t" << snap->name << "\tlinks(created=" << r.patchbay.createdLinks << ", already=" << r.patchbay.alreadyPresentLinks
-                << ", missing=" << r.patchbay.missingEndpoints << ", errors=" << r.patchbay.errors.size() << ")\n";
+            out << "applied\t" << snap->name << "\tclock=" << (r.clockRequested ? (r.clockSet ? "set" : "not-set") : "n/a")
+                << "\tlinks(created=" << r.patchbay.createdLinks << ", already=" << r.patchbay.alreadyPresentLinks << ", missing=" << r.patchbay.missingEndpoints
+                << ", errors=" << r.patchbay.errors.size() << ")\n";
             for (const auto& m : r.missing) {
               err << "missing:\t" << m << "\n";
             }

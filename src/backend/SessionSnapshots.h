@@ -5,6 +5,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include <cstdint>
 #include <optional>
 
 #include "backend/EqConfig.h"
@@ -21,6 +22,14 @@ struct SessionSnapshot final {
   QString defaultSinkName;
   QString defaultSourceName;
 
+  // Clock overrides (PipeWire "settings" metadata). Stored only when available during snapshot.
+  // When present, nullopt means "auto" / clear override.
+  bool hasClockOverrides = false;
+  std::optional<uint32_t> clockForceRate;
+  std::optional<uint32_t> clockForceQuantum;
+  std::optional<uint32_t> clockMinQuantum;
+  std::optional<uint32_t> clockMaxQuantum;
+
   QHash<QString, EqPreset> eqByNodeName;
 
   QStringList sinksOrder;
@@ -29,6 +38,9 @@ struct SessionSnapshot final {
 
 struct SessionSnapshotApplyResult final {
   PatchbayProfileApplyResult patchbay;
+
+  bool clockRequested = false;
+  bool clockSet = false;
 
   bool defaultSinkRequested = false;
   bool defaultSinkSet = false;
@@ -54,4 +66,3 @@ SessionSnapshotApplyResult applySessionSnapshot(PipeWireGraph& graph,
                                                const SessionSnapshot& snapshot,
                                                bool strictLinks,
                                                bool strictSettings);
-
