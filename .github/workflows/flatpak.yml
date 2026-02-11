@@ -22,6 +22,7 @@ jobs:
             elfutils \
             flatpak \
             flatpak-builder \
+            librsvg2-common \
             xvfb
 
       - name: Add Flathub remote (user)
