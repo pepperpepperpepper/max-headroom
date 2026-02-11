@@ -32,8 +32,8 @@ jobs:
             openbox \
             pkg-config \
             pipewire \
-            qt6-base-plugins \
             qt6-base-dev \
+            qt6-qpa-plugins \
             stalonetray \
             wireplumber \
             xvfb \

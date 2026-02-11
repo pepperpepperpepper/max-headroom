@@ -15,6 +15,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            flatpak \
+            flatpak-builder
+
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
