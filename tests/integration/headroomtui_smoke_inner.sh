@@ -230,7 +230,13 @@ export IN_NODE_STEPS="$in_node_steps"
 export IN_PORT_STEPS="$in_port_steps"
 export VOL_KEY="$vol_key"
 
-expect <<'EOF'
+export TERM="xterm-256color"
+if [[ -n "${CI:-}" && -z "${HEADROOM_TUI_EXPECT_LOG:-}" ]]; then
+  export HEADROOM_TUI_EXPECT_LOG="${XDG_RUNTIME_DIR:-/tmp}/headroom-tui-expect.log"
+fi
+
+expect_exit=0
+expect <<'EOF' || expect_exit=$?
   if {[info exists env(HEADROOM_TUI_EXPECT_LOG)] && $env(HEADROOM_TUI_EXPECT_LOG) != ""} {
     log_user 1
     log_file -noappend $env(HEADROOM_TUI_EXPECT_LOG)
@@ -319,6 +325,14 @@ expect <<'EOF'
   set exit_status [lindex $result 3]
   exit $exit_status
 EOF
+if [[ "$expect_exit" -ne 0 ]]; then
+  echo "headroom-tui smoke: expect failed (exit $expect_exit)" >&2
+  if [[ -n "${HEADROOM_TUI_EXPECT_LOG:-}" && -f "${HEADROOM_TUI_EXPECT_LOG}" ]]; then
+    echo "---- expect log (tail) ----" >&2
+    tail -n 120 "${HEADROOM_TUI_EXPECT_LOG}" >&2 || true
+  fi
+  exit "$expect_exit"
+fi
 
 order_after="$("$CTL" sinks order get --json)"
 if [[ "$(jq -c '.order' <<<"$order_before")" == "$(jq -c '.order' <<<"$order_after")" ]]; then

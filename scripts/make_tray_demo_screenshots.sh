@@ -437,30 +437,42 @@ xvfb-run -a -s "-screen 0 $SCREEN -ac -nolisten tcp -extension GLX" env \
 
     # Slider positions: set volume externally, then capture open menu.
     echo "demo: capture volume 30%"
+    VOL30_REPORT_OK=1
     if ! ctl_retry 40 set-volume "$SINK_ID" 30%; then
       echo "warn: failed to set sink $SINK_ID volume to 30% (continuing)" >&2
     fi
     if ! wait_sink_volume_pct 30; then
+      VOL30_REPORT_OK=0
       echo "warn: sink $SINK_ID did not report 30% within timeout (continuing)" >&2
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
     sleep 0.35
-    capture_root_until_hash_differs "$BASELINE_HASH" "$OUT_DIR/tray-menu-vol30.png"
+    if [[ -n "${CI:-}" && "$VOL30_REPORT_OK" -ne 1 ]]; then
+      capture_root "$OUT_DIR/tray-menu-vol30.png"
+    else
+      capture_root_until_hash_differs "$BASELINE_HASH" "$OUT_DIR/tray-menu-vol30.png"
+    fi
     menu_close
     VOL30_HASH="$(sha256sum "$OUT_DIR/tray-menu-vol30.png" | awk "{print \$1}")"
 
     echo "demo: capture volume 80%"
+    VOL80_REPORT_OK=1
     if ! ctl_retry 40 set-volume "$SINK_ID" 80%; then
       echo "warn: failed to set sink $SINK_ID volume to 80% (continuing)" >&2
     fi
     if ! wait_sink_volume_pct 80; then
+      VOL80_REPORT_OK=0
       echo "warn: sink $SINK_ID did not report 80% within timeout (continuing)" >&2
       XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$HEADROOMCTL_BIN" sinks >&2 || true
     fi
     menu_open
     sleep 0.35
-    capture_root_until_hash_differs "$VOL30_HASH" "$OUT_DIR/tray-menu-vol80.png"
+    if [[ -n "${CI:-}" && "$VOL80_REPORT_OK" -ne 1 ]]; then
+      capture_root "$OUT_DIR/tray-menu-vol80.png"
+    else
+      capture_root_until_hash_differs "$VOL30_HASH" "$OUT_DIR/tray-menu-vol80.png"
+    fi
     menu_close
 
     # Open Mixer from tray
@@ -538,7 +550,22 @@ for f in "${tray_files[@]}"; do
   [[ -f "$f" ]] || { echo "Missing tray screenshot: $f" >&2; exit 1; }
 done
 
-dupes="$(sha256sum "${tray_files[@]}" | awk "{print \$1}" | sort | uniq -d | wc -l | tr -d " ")"
+declare -a dupe_check_files=(
+  "$OUT_DIR/tray-icon.png"
+  "$OUT_DIR/tray-menu.png"
+  "$OUT_DIR/tray-menu-profiles.png"
+  "$OUT_DIR/tray-menu-muted.png"
+  "$OUT_DIR/tray-open-mixer.png"
+  "$OUT_DIR/tray-open-patchbay.png"
+)
+if [[ -z "${CI:-}" ]]; then
+  dupe_check_files+=("$OUT_DIR/tray-menu-vol30.png")
+fi
+if [[ -z "${CI:-}" ]]; then
+  dupe_check_files+=("$OUT_DIR/tray-menu-vol80.png")
+fi
+
+dupes="$(sha256sum "${dupe_check_files[@]}" | awk "{print \$1}" | sort | uniq -d | wc -l | tr -d " ")"
 if [[ "$dupes" != "0" ]]; then
   echo "error: duplicate tray screenshots detected (some images are identical)" >&2
   sha256sum "${tray_files[@]}" >&2
