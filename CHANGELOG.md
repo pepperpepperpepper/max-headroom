@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- Packaging: distro specs + release automation polish.
+## [0.1.1] - 2026-02-11
+
+### Fixed
+
+- CI now passes on `ubuntu-latest`.
+- Flatpak CI builds now succeed and upload a bundle artifact.
+
+### Changed
+
+- Build: shared backend static libs + `ccache` auto-detect to speed rebuilds.
 
 ## [0.1.0] - 2026-01-22
 
