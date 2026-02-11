@@ -5,6 +5,7 @@
 #include "PipeWireThread.h"
 
 #include <pipewire/keys.h>
+#include <pipewire/type.h>
 
 #include <spa/utils/dict.h>
 
@@ -60,4 +61,3 @@ struct PipeWireGraph::ProfilerBinding final {
   pw_profiler* profiler = nullptr;
   spa_hook listener{};
 };
-
