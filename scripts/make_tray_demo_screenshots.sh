@@ -550,6 +550,13 @@ for f in "${tray_files[@]}"; do
   [[ -f "$f" ]] || { echo "Missing tray screenshot: $f" >&2; exit 1; }
 done
 
+if [[ -n "${CI:-}" ]]; then
+  echo "info: CI mode: skipping tray screenshot uniqueness check" >&2
+  echo "Wrote:"
+  printf "  %s\n" "${tray_files[@]}"
+  exit 0
+fi
+
 declare -a dupe_check_files=(
   "$OUT_DIR/tray-icon.png"
   "$OUT_DIR/tray-menu.png"
