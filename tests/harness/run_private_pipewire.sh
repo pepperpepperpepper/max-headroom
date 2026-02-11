@@ -27,7 +27,6 @@ need dbus-daemon
 need pipewire
 need pw-cli
 need pw-dump
-need pw-cat
 need wireplumber
 
 RUNTIME_DIR="$(mktemp -d "/tmp/headroom-test-runtime-XXXXXX")"
@@ -45,7 +44,6 @@ WIREPLUMBER_LOG_ERR="$RUNTIME_DIR/wireplumber.err"
 
 cleanup() {
   set +e
-  [[ -n "${TONE_PID:-}" ]] && kill -TERM "$TONE_PID" 2>/dev/null || true
   [[ -n "${WIREPLUMBER_PID:-}" ]] && kill -TERM "$WIREPLUMBER_PID" 2>/dev/null || true
   [[ -n "${PIPEWIRE_PID:-}" ]] && kill -TERM "$PIPEWIRE_PID" 2>/dev/null || true
   [[ -n "${DBUS_PID:-}" ]] && kill -TERM "$DBUS_PID" 2>/dev/null || true
@@ -98,11 +96,6 @@ for _ in $(seq 1 200); do
   fi
   sleep 0.05
 done
-
-# Seed an active stream so Link/Port/Stream listings are non-empty.
-nohup pw-cat --remote pipewire-0 --playback --raw --format f32 --rate 48000 --channels 2 \
-  --target Headroom-TestSink --properties "node.name=Headroom-TestTone node.description=TestTone" - </dev/zero >/dev/null 2>&1 &
-TONE_PID=$!
 
 pw-cli -r pipewire-0-manager create-node adapter \
   factory.name=support.null-audio-sink node.name=Headroom-AltSink node.description=AltSink \

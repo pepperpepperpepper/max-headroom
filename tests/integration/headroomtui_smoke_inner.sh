@@ -80,7 +80,7 @@ out_node_id=''
 in_node_id=''
 for _ in $(seq 1 120); do
   nodes="$("$CTL" nodes --json 2>/dev/null || echo '[]')"
-  out_node_id="$(jq -r '.[] | select(.name=="Headroom-TestTone") | .id' <<<"$nodes" | head -n 1)"
+  out_node_id="$(jq -r '.[] | select(.name=="Headroom-TestSink") | .id' <<<"$nodes" | head -n 1)"
   in_node_id="$(jq -r '.[] | select(.name=="Headroom-AltSink") | .id' <<<"$nodes" | head -n 1)"
   if [[ -n "$out_node_id" && "$out_node_id" != "null" && -n "$in_node_id" && "$in_node_id" != "null" ]]; then
     break
@@ -88,7 +88,7 @@ for _ in $(seq 1 120); do
   sleep 0.05
 done
 if [[ -z "$out_node_id" || "$out_node_id" == "null" || -z "$in_node_id" || "$in_node_id" == "null" ]]; then
-  echo "Failed to find required nodes for Patchbay connect (TestTone/AltSink)" >&2
+  echo "Failed to find required nodes for Patchbay connect (TestSink/AltSink)" >&2
   echo "$nodes" >&2
   exit 1
 fi
@@ -96,17 +96,21 @@ fi
 ports='[]'
 out_port_id=''
 in_port_id=''
+out_port_seed_id=''
+in_port_seed_id=''
 for _ in $(seq 1 120); do
   ports="$("$CTL" ports --json 2>/dev/null || echo '[]')"
-  out_port_id="$(jq -r '.[] | select(.nodeName=="Headroom-TestTone" and .direction=="out" and .name=="output_FL") | .id' <<<"$ports" | head -n 1)"
+  out_port_id="$(jq -r '.[] | select(.nodeName=="Headroom-TestSink" and .direction=="out" and .name=="monitor_FL") | .id' <<<"$ports" | head -n 1)"
   in_port_id="$(jq -r '.[] | select(.nodeName=="Headroom-AltSink" and .direction=="in" and .name=="playback_FL") | .id' <<<"$ports" | head -n 1)"
-  if [[ -n "$out_port_id" && "$out_port_id" != "null" && -n "$in_port_id" && "$in_port_id" != "null" ]]; then
+  out_port_seed_id="$(jq -r '.[] | select(.nodeName=="Headroom-TestSink" and .direction=="out" and .name=="monitor_FR") | .id' <<<"$ports" | head -n 1)"
+  in_port_seed_id="$(jq -r '.[] | select(.nodeName=="Headroom-AltSink" and .direction=="in" and .name=="playback_FR") | .id' <<<"$ports" | head -n 1)"
+  if [[ -n "$out_port_id" && "$out_port_id" != "null" && -n "$in_port_id" && "$in_port_id" != "null" && -n "$out_port_seed_id" && "$out_port_seed_id" != "null" && -n "$in_port_seed_id" && "$in_port_seed_id" != "null" ]]; then
     break
   fi
   sleep 0.05
 done
-if [[ -z "$out_port_id" || "$out_port_id" == "null" || -z "$in_port_id" || "$in_port_id" == "null" ]]; then
-  echo "Failed to find required ports for Patchbay connect (TestTone output_FL -> AltSink playback_FL)" >&2
+if [[ -z "$out_port_id" || "$out_port_id" == "null" || -z "$in_port_id" || "$in_port_id" == "null" || -z "$out_port_seed_id" || "$out_port_seed_id" == "null" || -z "$in_port_seed_id" || "$in_port_seed_id" == "null" ]]; then
+  echo "Failed to find required ports for Patchbay connect (TestSink monitor_FL -> AltSink playback_FL)" >&2
   echo "$ports" >&2
   exit 1
 fi
@@ -173,6 +177,21 @@ out_node_steps="$(jq -r '.outNodeSteps' <<<"$idx_json")"
 out_port_steps="$(jq -r '.outPortSteps' <<<"$idx_json")"
 in_node_steps="$(jq -r '.inNodeSteps' <<<"$idx_json")"
 in_port_steps="$(jq -r '.inPortSteps' <<<"$idx_json")"
+
+# Seed a link so Patchbay has something deterministic to delete.
+seed_link_res='{}'
+for _ in $(seq 1 80); do
+  seed_link_res="$("$CTL" connect "$out_port_seed_id" "$in_port_seed_id" --json 2>/dev/null || echo '{}')"
+  if jq -e '.ok == true' <<<"$seed_link_res" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.05
+done
+if ! jq -e '.ok == true' <<<"$seed_link_res" >/dev/null 2>&1; then
+  echo "Failed to seed a link for Patchbay delete action." >&2
+  echo "$seed_link_res" >&2
+  exit 1
+fi
 
 # Wait for at least one link so Patchbay has something to delete.
 links="[]"
@@ -365,12 +384,12 @@ if ! jq -e \
 fi
 
 if ! jq -e '
-    any(.[]; .outputNodeName=="Headroom-TestTone"
-      and .outputPortName=="output_FL"
+    any(.[]; .outputNodeName=="Headroom-TestSink"
+      and .outputPortName=="monitor_FL"
       and .inputNodeName=="Headroom-AltSink"
       and .inputPortName=="playback_FL")
   ' <<<"$links_after" >/dev/null; then
-  echo "patchbay: expected TestTone output_FL -> AltSink playback_FL link" >&2
-  jq -r '.[] | select(.outputNodeName=="Headroom-TestTone") | "have: id=\(.id) out=\(.outputPortName) inNode=\(.inputNodeName) inPort=\(.inputPortName)"' <<<"$links_after" >&2 || true
+  echo "patchbay: expected TestSink monitor_FL -> AltSink playback_FL link" >&2
+  jq -r '.[] | select(.outputNodeName=="Headroom-TestSink") | "have: id=\(.id) out=\(.outputPortName) inNode=\(.inputNodeName) inPort=\(.inputPortName)"' <<<"$links_after" >&2 || true
   exit 1
 fi

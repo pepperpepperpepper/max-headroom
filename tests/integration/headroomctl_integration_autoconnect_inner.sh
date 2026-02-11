@@ -20,7 +20,7 @@ trap cleanup EXIT
 "$HEADROOMCTL" patchbay autoconnect status --json | jq -e '.enabled | type == "boolean"' >/dev/null
 "$HEADROOMCTL" patchbay autoconnect enable on --json | jq -e '.ok == true and .enabled == true' >/dev/null
 
-"$HEADROOMCTL" patchbay autoconnect rule add "$rule" "Headroom-TestTone" "output_" "Headroom-AltSink" "playback_" --json \
+"$HEADROOMCTL" patchbay autoconnect rule add "$rule" "Headroom-TestSink" "monitor_" "Headroom-AltSink" "playback_" --json \
   | jq -e '.ok == true and .name == "'"$rule"'" and .enabled == true' >/dev/null
 
 "$HEADROOMCTL" patchbay autoconnect rules --json | jq -e 'any(.[]; .name == "'"$rule"'" and .enabled == true)' >/dev/null
@@ -53,13 +53,13 @@ fi
 
 for _ in $(seq 1 80); do
   links="$("$HEADROOMCTL" links --json)"
-  if jq -e 'any(.[]; .outputNodeName == "Headroom-TestTone" and .inputNodeName == "Headroom-AltSink")' <<<"$links" >/dev/null; then
+  if jq -e 'any(.[]; .outputNodeName == "Headroom-TestSink" and .inputNodeName == "Headroom-AltSink")' <<<"$links" >/dev/null; then
     break
   fi
   sleep 0.05
 done
 links="$("$HEADROOMCTL" links --json)"
-jq -e 'any(.[]; .outputNodeName == "Headroom-TestTone" and .inputNodeName == "Headroom-AltSink")' <<<"$links" >/dev/null
+jq -e 'any(.[]; .outputNodeName == "Headroom-TestSink" and .inputNodeName == "Headroom-AltSink")' <<<"$links" >/dev/null
 
 apply2='{}'
 for _ in $(seq 1 12); do
@@ -87,4 +87,3 @@ fi
 
 "$HEADROOMCTL" patchbay autoconnect rule delete "$rule" --json | jq -e '.ok == true and .name == "'"$rule"'"' >/dev/null
 "$HEADROOMCTL" patchbay autoconnect rules --json | jq -e 'all(.[]; .name != "'"$rule"'")' >/dev/null
-
