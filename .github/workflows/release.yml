@@ -19,19 +19,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             flatpak \
-            flatpak-builder
+            flatpak-builder \
+            xvfb
 
-      - name: Add Flathub remote
+      - name: Add Flathub remote (user)
         run: |
-          sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak remotes --system
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remotes --user
 
       - name: Build Flatpak bundle
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          manifest-path: flatpak/com.maxheadroom.Headroom.json
-          bundle: headroom-${{ github.ref_name }}.flatpak
-          cache-key: flatpak-builder-${{ github.sha }}
+        run: |
+          xvfb-run --auto-servernum flatpak-builder --user \
+            --repo=repo \
+            --disable-rofiles-fuse \
+            --install-deps-from=flathub \
+            --force-clean \
+            --default-branch=master \
+            --arch=x86_64 \
+            --ccache \
+            flatpak_app flatpak/com.maxheadroom.Headroom.json
+
+          flatpak build-bundle repo headroom-${{ github.ref_name }}.flatpak \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            --arch=x86_64 \
+            com.maxheadroom.Headroom master
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
