@@ -13,11 +13,6 @@
     </p>
   </description>
   <launchable type="desktop-id">com.maxheadroom.Headroom.desktop</launchable>
-  <provides>
-    <binary>headroom</binary>
-    <binary>headroomctl</binary>
-    <binary>headroom-tui</binary>
-  </provides>
   <categories>
     <category>AudioVideo</category>
     <category>Audio</category>
