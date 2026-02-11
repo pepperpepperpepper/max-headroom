@@ -8,6 +8,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if (NOT CMAKE_CXX_COMPILER_LAUNCHER)
+  find_program(CCACHE_PROGRAM ccache)
+  if (CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  endif()
+endif()
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -32,16 +39,10 @@ if (HEADROOM_BUILD_GUI)
   pkg_check_modules(XCB REQUIRED IMPORTED_TARGET xcb)
 endif()
 
-if (HEADROOM_BUILD_GUI)
-  qt_add_executable(headroom
-  	  src/app.qrc
-  	  src/main.cpp
-  	  src/MainWindow.cpp
-  	  src/MainWindowTray.cpp
-  	  src/MainWindowActions.cpp
-  	  src/MainWindow.h
-  	  src/backend/PipeWireThread.cpp
-  	  src/backend/PipeWireThread.h
+if (HEADROOM_BUILD_GUI OR HEADROOM_BUILD_TUI OR HEADROOM_BUILD_CLI)
+  add_library(headroom_backend_common STATIC
+    src/backend/PipeWireThread.cpp
+    src/backend/PipeWireThread.h
     src/backend/PipeWireGraph.cpp
     src/backend/PipeWireGraph.h
     src/backend/PipeWireGraphRegistry.cpp
@@ -59,37 +60,91 @@ if (HEADROOM_BUILD_GUI)
     src/backend/PatchbayAutoConnectRules.h
     src/backend/PatchbayPortConfig.cpp
     src/backend/PatchbayPortConfig.h
-    src/backend/PatchbayAutoConnectController.cpp
-    src/backend/PatchbayAutoConnectController.h
-    src/backend/PatchbayPersistentProfileController.cpp
-    src/backend/PatchbayPersistentProfileController.h
-    src/backend/SessionSnapshots.cpp
-    src/backend/SessionSnapshotsApply.cpp
-    src/backend/SessionSnapshotsSerialize.cpp
-    src/backend/SessionSnapshots.h
-    src/backend/AudioTap.cpp
-    src/backend/AudioTap.h
-    src/backend/AudioLevelTap.cpp
-    src/backend/AudioLevelTap.h
     src/backend/AudioRecorder.cpp
     src/backend/AudioRecorder.h
-    src/backend/AlsaSeqBridge.cpp
-    src/backend/AlsaSeqBridge.h
     src/backend/EngineControl.cpp
     src/backend/EngineControl.h
-  	  src/backend/LogStore.cpp
-  	  src/backend/LogStore.h
-  	  src/backend/EqConfig.h
-  	  src/backend/EqManager.cpp
-  	  src/backend/EqManagerPersist.cpp
-  	  src/backend/EqManagerRealtime.cpp
-  	  src/backend/EqManager.h
-  	  src/backend/ParametricEqFilter.cpp
-  	  src/backend/ParametricEqFilterDesign.cpp
-  	  src/backend/ParametricEqFilterResponse.cpp
-  	  src/backend/ParametricEqFilter.h
-    src/dsp/Fft.cpp
-    src/dsp/Fft.h
+  )
+
+  target_include_directories(headroom_backend_common PUBLIC src)
+
+  target_link_libraries(headroom_backend_common
+    PUBLIC
+      Qt6::Core
+      PkgConfig::PIPEWIRE
+      PkgConfig::SPA
+      PkgConfig::SNDFILE
+  )
+
+  target_compile_options(headroom_backend_common PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_definitions(headroom_backend_common PUBLIC HEADROOM_VERSION="${PROJECT_VERSION}")
+
+  if (HEADROOM_BUILD_GUI OR HEADROOM_BUILD_TUI)
+    add_library(headroom_backend_eq STATIC
+      src/backend/EqConfig.h
+      src/backend/EqManager.cpp
+      src/backend/EqManagerPersist.cpp
+      src/backend/EqManagerRealtime.cpp
+      src/backend/EqManager.h
+      src/backend/ParametricEqFilter.cpp
+      src/backend/ParametricEqFilterDesign.cpp
+      src/backend/ParametricEqFilterResponse.cpp
+      src/backend/ParametricEqFilter.h
+    )
+
+    target_link_libraries(headroom_backend_eq PUBLIC headroom_backend_common)
+    target_compile_options(headroom_backend_eq PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+
+  if (HEADROOM_BUILD_GUI OR HEADROOM_BUILD_CLI)
+    add_library(headroom_backend_sessions STATIC
+      src/backend/SessionSnapshots.cpp
+      src/backend/SessionSnapshotsApply.cpp
+      src/backend/SessionSnapshotsSerialize.cpp
+      src/backend/SessionSnapshots.h
+    )
+
+    target_link_libraries(headroom_backend_sessions PUBLIC headroom_backend_common)
+    target_compile_options(headroom_backend_sessions PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_library(headroom_backend_alsa_seq STATIC
+      src/backend/AlsaSeqBridge.cpp
+      src/backend/AlsaSeqBridge.h
+    )
+
+    target_link_libraries(headroom_backend_alsa_seq PUBLIC headroom_backend_common)
+    target_compile_options(headroom_backend_alsa_seq PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+
+  if (HEADROOM_BUILD_GUI)
+    add_library(headroom_backend_gui STATIC
+      src/backend/AudioTap.cpp
+      src/backend/AudioTap.h
+      src/backend/AudioLevelTap.cpp
+      src/backend/AudioLevelTap.h
+      src/backend/LogStore.cpp
+      src/backend/LogStore.h
+      src/backend/PatchbayAutoConnectController.cpp
+      src/backend/PatchbayAutoConnectController.h
+      src/backend/PatchbayPersistentProfileController.cpp
+      src/backend/PatchbayPersistentProfileController.h
+      src/dsp/Fft.cpp
+      src/dsp/Fft.h
+    )
+
+    target_link_libraries(headroom_backend_gui PUBLIC headroom_backend_common)
+    target_compile_options(headroom_backend_gui PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+endif()
+
+if (HEADROOM_BUILD_GUI)
+  qt_add_executable(headroom
+  	  src/app.qrc
+  	  src/main.cpp
+  	  src/MainWindow.cpp
+  	  src/MainWindowTray.cpp
+  	  src/MainWindowActions.cpp
+  	  src/MainWindow.h
     src/settings/SettingsKeys.h
     src/settings/VisualizerSettings.h
     src/ui/GraphPage.cpp
@@ -137,21 +192,20 @@ if (HEADROOM_BUILD_GUI)
     src/ui/LevelMeterWidget.h
   )
 
-  target_include_directories(headroom PRIVATE src)
-
   target_link_libraries(headroom
     PRIVATE
+      headroom_backend_common
+      headroom_backend_eq
+      headroom_backend_sessions
+      headroom_backend_alsa_seq
+      headroom_backend_gui
       Qt6::Core
       Qt6::Gui
       Qt6::Widgets
-      PkgConfig::PIPEWIRE
-      PkgConfig::SPA
-      PkgConfig::SNDFILE
       PkgConfig::XCB
   )
 
   target_compile_options(headroom PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(headroom PRIVATE HEADROOM_VERSION="${PROJECT_VERSION}")
 
   install(TARGETS headroom RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
@@ -178,55 +232,21 @@ if (HEADROOM_BUILD_TUI)
 	    src/tui/TuiUtilFormat.cpp
 	    src/tui/TuiUtilPrompts.cpp
 	    src/tui/TuiInternal.h
-	    src/backend/PipeWireThread.cpp
-	    src/backend/PipeWireThread.h
-		    src/backend/PipeWireGraph.cpp
-	    src/backend/PipeWireGraph.h
-	    src/backend/PipeWireGraphRegistry.cpp
-	    src/backend/PipeWireGraphOpsLinks.cpp
-	    src/backend/PipeWireGraphOpsMetadata.cpp
-	    src/backend/PipeWireGraphOpsMetaProfiler.cpp
-	    src/backend/PipeWireGraphOpsNodeControls.cpp
-	    src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
-	    src/backend/PipeWireGraphInternal.h
-	    src/backend/PatchbayProfiles.cpp
-	    src/backend/PatchbayProfiles.h
-	    src/backend/PatchbayProfileHooks.cpp
-    src/backend/PatchbayProfileHooks.h
-    src/backend/PatchbayAutoConnectRules.cpp
-    src/backend/PatchbayAutoConnectRules.h
-    src/backend/PatchbayPortConfig.cpp
-    src/backend/PatchbayPortConfig.h
-    src/backend/AudioRecorder.cpp
-    src/backend/AudioRecorder.h
-    src/backend/EngineControl.cpp
-	    src/backend/EngineControl.h
-	    src/backend/EqConfig.h
-	    src/backend/EqManager.cpp
-	    src/backend/EqManagerPersist.cpp
-	    src/backend/EqManagerRealtime.cpp
-	    src/backend/EqManager.h
-	    src/backend/ParametricEqFilter.cpp
-	    src/backend/ParametricEqFilterDesign.cpp
-	    src/backend/ParametricEqFilterResponse.cpp
-	    src/backend/ParametricEqFilter.h
   )
 
   set_target_properties(headroom_tui PROPERTIES OUTPUT_NAME headroom-tui)
 
-  target_include_directories(headroom_tui PRIVATE src ${CURSES_INCLUDE_DIRS})
+  target_include_directories(headroom_tui PRIVATE ${CURSES_INCLUDE_DIRS})
 
   target_link_libraries(headroom_tui
     PRIVATE
+      headroom_backend_common
+      headroom_backend_eq
       Qt6::Core
-      PkgConfig::PIPEWIRE
-      PkgConfig::SPA
-      PkgConfig::SNDFILE
       ${CURSES_LIBRARIES}
   )
 
   target_compile_options(headroom_tui PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(headroom_tui PRIVATE HEADROOM_VERSION="${PROJECT_VERSION}")
 
   install(TARGETS headroom_tui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
@@ -252,49 +272,17 @@ if (HEADROOM_BUILD_CLI)
     src/cli/CliCommandsSession.cpp
     src/cli/CliUtil.cpp
     src/cli/CliInternal.h
-    src/backend/PipeWireThread.cpp
-    src/backend/PipeWireThread.h
-	    src/backend/PipeWireGraph.cpp
-	    src/backend/PipeWireGraph.h
-	    src/backend/PipeWireGraphRegistry.cpp
-	    src/backend/PipeWireGraphOpsLinks.cpp
-	    src/backend/PipeWireGraphOpsMetadata.cpp
-	    src/backend/PipeWireGraphOpsMetaProfiler.cpp
-	    src/backend/PipeWireGraphOpsNodeControls.cpp
-	    src/backend/PipeWireGraphOpsProfilerSnapshot.cpp
-	    src/backend/PipeWireGraphInternal.h
-	    src/backend/PatchbayProfiles.cpp
-	    src/backend/PatchbayProfiles.h
-	    src/backend/PatchbayProfileHooks.cpp
-    src/backend/PatchbayProfileHooks.h
-    src/backend/PatchbayAutoConnectRules.cpp
-    src/backend/PatchbayAutoConnectRules.h
-    src/backend/PatchbayPortConfig.cpp
-    src/backend/PatchbayPortConfig.h
-    src/backend/SessionSnapshots.cpp
-    src/backend/SessionSnapshotsApply.cpp
-    src/backend/SessionSnapshotsSerialize.cpp
-    src/backend/SessionSnapshots.h
-    src/backend/AudioRecorder.cpp
-    src/backend/AudioRecorder.h
-    src/backend/AlsaSeqBridge.cpp
-    src/backend/AlsaSeqBridge.h
-    src/backend/EngineControl.cpp
-    src/backend/EngineControl.h
   )
-
-  target_include_directories(headroomctl PRIVATE src)
 
   target_link_libraries(headroomctl
     PRIVATE
+      headroom_backend_common
+      headroom_backend_sessions
+      headroom_backend_alsa_seq
       Qt6::Core
-      PkgConfig::PIPEWIRE
-      PkgConfig::SPA
-      PkgConfig::SNDFILE
   )
 
   target_compile_options(headroomctl PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_definitions(headroomctl PRIVATE HEADROOM_VERSION="${PROJECT_VERSION}")
 
   install(TARGETS headroomctl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()

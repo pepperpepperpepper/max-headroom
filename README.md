@@ -48,14 +48,24 @@ Tip: regenerate these locally with `./scripts/make_screenshots.sh`.
 - Settings: reorder output devices (affects Mixer + Patchbay).
 - Parametric EQ: per-device *and per-app stream* EQ (inserted as an in-graph PipeWire filter), with response curve preview, preset save/load, and AutoEQ/Squiglink import.
 
+## Install (prebuilt)
+
+Recommended: Flatpak (cross-distro, no local build needed).
+
+1. Download `headroom-<version>.flatpak` from GitHub Releases.
+2. Install: `flatpak install --user ./headroom-<version>.flatpak`
+3. Run: `flatpak run com.maxheadroom.Headroom`
+
 ## Build (local)
 
-Dependencies: Qt 6, CMake, pkg-config, PipeWire development headers. Optional: `ncursesw` (for `headroom-tui`).
+Dependencies: Qt 6, CMake, Ninja, pkg-config, PipeWire development headers. Optional: `ncursesw` (for `headroom-tui`).
 
 Note: some Qt 6 builds require Vulkan dev packages at configure-time. If you see a Vulkan error during `cmake -S`, install your distro's Vulkan loader/headers (e.g. `libvulkan-dev` on Debian/Ubuntu).
 
+Tip: install `ccache` for faster rebuilds (CMake will use it automatically if found).
+
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ./build/headroom
 ```
@@ -72,7 +82,7 @@ If your machine hangs/reboots during the compile, try limiting parallelism: `cma
 ## Tests
 
 ```bash
-cmake -S . -B build -DHEADROOM_BUILD_TESTS=ON
+cmake -S . -B build -GNinja -DHEADROOM_BUILD_TESTS=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```

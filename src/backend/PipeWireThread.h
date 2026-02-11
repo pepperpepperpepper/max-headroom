@@ -3,9 +3,15 @@
 #include <QObject>
 
 #include <atomic>
+#include <cstdint>
 
-#include <pipewire/core.h>
+#include <spa/utils/hook.h>
+
 #include <pipewire/thread-loop.h>
+
+struct pw_thread_loop;
+struct pw_context;
+struct pw_core;
 
 class PipeWireThread final : public QObject
 {

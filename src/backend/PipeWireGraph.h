@@ -6,10 +6,13 @@
 #include <QString>
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 
-#include <pipewire/core.h>
+#include <spa/utils/hook.h>
+
+struct pw_registry;
 
 class PipeWireThread;
 

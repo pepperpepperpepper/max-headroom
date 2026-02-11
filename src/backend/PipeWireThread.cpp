@@ -3,8 +3,10 @@
 #include <QCoreApplication>
 #include <QString>
 
+#include <pipewire/core.h>
 #include <pipewire/context.h>
 #include <pipewire/impl-module.h>
+#include <pipewire/thread-loop.h>
 
 #include <spa/utils/result.h>
 
