@@ -5,7 +5,7 @@
   <summary>PipeWire-first mixer, patchbay, and visualizers</summary>
   <developer_name>Headroom Contributors</developer_name>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LicenseRef-Proprietary</project_license>
+  <project_license>Proprietary</project_license>
   <description>
     <p>
       Headroom is a PipeWire-first replacement for classic audio control tools,
