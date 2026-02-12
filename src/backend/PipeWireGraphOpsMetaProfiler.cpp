@@ -1,6 +1,8 @@
 #include "PipeWireGraphInternal.h"
+#include "DebugEnv.h"
 
 #include <QByteArray>
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -18,6 +20,13 @@
 #include <spa/pod/iter.h>
 
 #include <algorithm>
+
+namespace {
+void logPwOp(const QString& msg)
+{
+  qDebug().noquote() << QStringLiteral("headroom: debug: %1").arg(msg);
+}
+} // namespace
 
 bool PipeWireGraph::setDefaultAudioSink(uint32_t nodeId)
 {
@@ -40,7 +49,15 @@ bool PipeWireGraph::setDefaultAudioSink(uint32_t nodeId)
     }
   }
 
+  const bool debugOps = headroom::debug::pwOpsEnabled() && headroom::debug::pwNodeFilterMatches(nodeId, nodeName, {});
+  if (debugOps) {
+    logPwOp(QStringLiteral("setDefaultAudioSink nodeId=%1 name=%2 preferJson=%3").arg(nodeId).arg(nodeName).arg(preferJson ? 1 : 0));
+  }
+
   if (!binding || !binding->metadata) {
+    if (debugOps) {
+      logPwOp(QStringLiteral("setDefaultAudioSink nodeId=%1 (missing metadata binding)").arg(nodeId));
+    }
     pw_thread_loop_unlock(loop);
     return false;
   }
@@ -56,6 +73,10 @@ bool PipeWireGraph::setDefaultAudioSink(uint32_t nodeId)
     const QByteArray value = QByteArray::number(nodeId);
     r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.sink", "Spa:Id", value.constData());
     r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.sink", "Spa:Id", value.constData());
+  }
+
+  if (debugOps) {
+    logPwOp(QStringLiteral("setDefaultAudioSink nodeId=%1 r1=%2 r2=%3 ok=%4").arg(nodeId).arg(r1).arg(r2).arg((r1 >= 0 && r2 >= 0) ? 1 : 0));
   }
 
   pw_thread_loop_unlock(loop);
@@ -83,7 +104,15 @@ bool PipeWireGraph::setDefaultAudioSource(uint32_t nodeId)
     }
   }
 
+  const bool debugOps = headroom::debug::pwOpsEnabled() && headroom::debug::pwNodeFilterMatches(nodeId, nodeName, {});
+  if (debugOps) {
+    logPwOp(QStringLiteral("setDefaultAudioSource nodeId=%1 name=%2 preferJson=%3").arg(nodeId).arg(nodeName).arg(preferJson ? 1 : 0));
+  }
+
   if (!binding || !binding->metadata) {
+    if (debugOps) {
+      logPwOp(QStringLiteral("setDefaultAudioSource nodeId=%1 (missing metadata binding)").arg(nodeId));
+    }
     pw_thread_loop_unlock(loop);
     return false;
   }
@@ -99,6 +128,10 @@ bool PipeWireGraph::setDefaultAudioSource(uint32_t nodeId)
     const QByteArray value = QByteArray::number(nodeId);
     r1 = pw_metadata_set_property(binding->metadata, 0, "default.audio.source", "Spa:Id", value.constData());
     r2 = pw_metadata_set_property(binding->metadata, 0, "default.configured.audio.source", "Spa:Id", value.constData());
+  }
+
+  if (debugOps) {
+    logPwOp(QStringLiteral("setDefaultAudioSource nodeId=%1 r1=%2 r2=%3 ok=%4").arg(nodeId).arg(r1).arg(r2).arg((r1 >= 0 && r2 >= 0) ? 1 : 0));
   }
 
   pw_thread_loop_unlock(loop);
@@ -173,6 +206,9 @@ bool PipeWireGraph::setClockForceRate(std::optional<uint32_t> rate)
 
   const QByteArray value = QByteArray::number(rate.value_or(0));
   const int res = pw_metadata_set_property(binding->metadata, 0, "clock.force-rate", "Spa:Int", value.constData());
+  if (headroom::debug::pwOpsEnabled()) {
+    logPwOp(QStringLiteral("setClockForceRate value=%1 res=%2").arg(rate.has_value() ? QString::number(*rate) : QStringLiteral("auto")).arg(res));
+  }
 
   pw_thread_loop_unlock(loop);
   return res >= 0;
@@ -200,6 +236,9 @@ bool PipeWireGraph::setClockForceQuantum(std::optional<uint32_t> quantum)
 
   const QByteArray value = QByteArray::number(quantum.value_or(0));
   const int res = pw_metadata_set_property(binding->metadata, 0, "clock.force-quantum", "Spa:Int", value.constData());
+  if (headroom::debug::pwOpsEnabled()) {
+    logPwOp(QStringLiteral("setClockForceQuantum value=%1 res=%2").arg(quantum.has_value() ? QString::number(*quantum) : QStringLiteral("auto")).arg(res));
+  }
 
   pw_thread_loop_unlock(loop);
   return res >= 0;
@@ -231,6 +270,9 @@ bool PipeWireGraph::setClockMinQuantum(std::optional<uint32_t> quantum)
                                            "clock.min-quantum",
                                            "Spa:Int",
                                            quantum.has_value() ? value.constData() : nullptr);
+  if (headroom::debug::pwOpsEnabled()) {
+    logPwOp(QStringLiteral("setClockMinQuantum value=%1 res=%2").arg(quantum.has_value() ? QString::number(*quantum) : QStringLiteral("unset")).arg(res));
+  }
 
   pw_thread_loop_unlock(loop);
   return res >= 0;
@@ -262,6 +304,9 @@ bool PipeWireGraph::setClockMaxQuantum(std::optional<uint32_t> quantum)
                                            "clock.max-quantum",
                                            "Spa:Int",
                                            quantum.has_value() ? value.constData() : nullptr);
+  if (headroom::debug::pwOpsEnabled()) {
+    logPwOp(QStringLiteral("setClockMaxQuantum value=%1 res=%2").arg(quantum.has_value() ? QString::number(*quantum) : QStringLiteral("unset")).arg(res));
+  }
 
   pw_thread_loop_unlock(loop);
   return res >= 0;

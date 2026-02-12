@@ -1,5 +1,8 @@
 #include "PipeWireGraphInternal.h"
+#include "DebugEnv.h"
 #include "VolumeScale.h"
+
+#include <QDebug>
 
 #include <pipewire/core.h>
 #include <pipewire/extensions/metadata.h>
@@ -26,6 +29,16 @@ bool isInternalEphemeralNodeName(const QString& name)
 {
   return name.startsWith(QStringLiteral("headroom.meter.")) || name == QStringLiteral("headroom.visualizer") ||
       name == QStringLiteral("headroom.recorder");
+}
+
+QString nodeLabel(const PwNodeInfo& n)
+{
+  return n.description.isEmpty() ? n.name : n.description;
+}
+
+void logPwControl(const QString& msg)
+{
+  qDebug().noquote() << QStringLiteral("headroom: debug: %1").arg(msg);
 }
 } // namespace
 
@@ -575,11 +588,23 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   }
 
   bool changed = false;
+  bool wantLog = false;
+  PwNodeControls prev{};
+  PwNodeInfo nodeInfo{};
+  const bool debugControls = headroom::debug::pwControlsEnabled();
   {
     std::lock_guard<std::mutex> lock(binding->graph->m_mutex);
+    if (debugControls) {
+      nodeInfo = binding->graph->m_nodes.value(binding->nodeId, PwNodeInfo{});
+    }
     const auto it = binding->graph->m_nodeControls.constFind(binding->nodeId);
     if (it == binding->graph->m_nodeControls.constEnd() || it.value().mute != controls.mute || it.value().volume != controls.volume ||
         it.value().channelVolumes != controls.channelVolumes || it.value().hasMute != controls.hasMute || it.value().hasVolume != controls.hasVolume) {
+      if (debugControls && it != binding->graph->m_nodeControls.constEnd() &&
+          headroom::debug::pwNodeFilterMatches(binding->nodeId, nodeInfo.name, nodeInfo.description)) {
+        prev = it.value();
+        wantLog = true;
+      }
       binding->graph->m_nodeControls.insert(binding->nodeId, controls);
       changed = true;
     }
@@ -588,6 +613,20 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
   if (changed) {
     if (debugRate) {
       s_changed.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (debugControls && headroom::debug::pwNodeFilterMatches(binding->nodeId, nodeInfo.name, nodeInfo.description)) {
+      const int oldPct = wantLog ? headroom::volume::linearToUiPercent(prev.volume) : -1;
+      const int newPct = headroom::volume::linearToUiPercent(controls.volume);
+      logPwControl(QStringLiteral("onNodeParam(Props) nodeId=%1 node=%2 hasVolume=%3 volLinear=%4 (ui=%5%%)%6 hasMute=%7 mute=%8 channelVolumes=%9")
+                       .arg(binding->nodeId)
+                       .arg(nodeLabel(nodeInfo))
+                       .arg(controls.hasVolume ? 1 : 0)
+                       .arg(QString::number(controls.volume, 'f', 4))
+                       .arg(newPct)
+                       .arg(wantLog ? QStringLiteral(" prevUi=%1%%").arg(oldPct) : QString())
+                       .arg(controls.hasMute ? 1 : 0)
+                       .arg(controls.mute ? 1 : 0)
+                       .arg(controls.channelVolumes.size()));
     }
     binding->graph->scheduleGraphChanged(ChangeNodeControls);
   }

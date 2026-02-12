@@ -118,6 +118,28 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+## Debug logging
+
+Headroom captures Qt + PipeWire library logs in the **Logs…** dialog.
+
+To debug volume/mute and other control interactions, enable extra (opt-in) logs:
+
+- `HEADROOM_DEBUG_PW_OPS=1` logs the PipeWire operations Headroom sends (set volume/mute, default device writes, link connect/disconnect).
+- `HEADROOM_DEBUG_PW_CONTROLS=1` logs incoming node control updates from PipeWire (volume/mute readbacks).
+- `HEADROOM_DEBUG_PW_NODE=<id|substring|all>` optionally filters the above to a specific node (example: `id:42` or `Firefox`).
+- `HEADROOM_DEBUG_PW_RATE=1` enables rate-limited counters for PipeWire graph churn (useful for diagnosing UI flicker).
+
+Examples:
+
+```bash
+# Log volume writes + readbacks (all nodes)
+HEADROOM_DEBUG_PW_OPS=1 HEADROOM_DEBUG_PW_CONTROLS=1 ./build/headroom
+
+# Only log one node (by id or substring)
+HEADROOM_DEBUG_PW_OPS=1 HEADROOM_DEBUG_PW_CONTROLS=1 HEADROOM_DEBUG_PW_NODE=id:42 ./build/headroom
+HEADROOM_DEBUG_PW_OPS=1 HEADROOM_DEBUG_PW_CONTROLS=1 HEADROOM_DEBUG_PW_NODE=Firefox ./build/headroom
+```
+
 Real-host validation (PipeWire + systemd user session; avoid `sudo`):
 
 ```bash
