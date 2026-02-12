@@ -52,9 +52,40 @@ Tip: regenerate these locally with `./scripts/make_screenshots.sh`.
 
 Recommended: Flatpak (cross-distro, no local build needed).
 
-1. Download `headroom-<version>.flatpak` from GitHub Releases.
-2. Install: `flatpak install --user ./headroom-<version>.flatpak`
-3. Run: `flatpak run com.maxheadroom.Headroom`
+Releases currently ship a **Linux x86_64 Flatpak bundle** (a precompiled app), named like `headroom-v0.1.1.flatpak`.
+
+Download the `.flatpak` bundle from GitHub Releases, then:
+
+One-time setup (install Flatpak + ensure Flathub is configured for runtimes):
+
+```bash
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+```
+
+Install (per-user):
+
+```bash
+flatpak install --user --bundle ./headroom-vX.Y.Z.flatpak
+```
+
+Run:
+
+```bash
+flatpak run com.maxheadroom.Headroom
+```
+
+Update:
+
+```bash
+flatpak install --user --bundle ./headroom-vX.Y.Z.flatpak
+# If Flatpak says it's already installed, add: --reinstall
+```
+
+Uninstall:
+
+```bash
+flatpak uninstall --user com.maxheadroom.Headroom
+```
 
 ## Build (local)
 
