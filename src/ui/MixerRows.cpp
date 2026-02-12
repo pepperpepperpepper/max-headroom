@@ -15,6 +15,7 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -77,10 +78,10 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
   h->addWidget(meter, 0);
 
   auto* slider = new QSlider(Qt::Horizontal, row);
-  slider->setRange(0, 150);
+  slider->setRange(0, 200);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);
-  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, 150));
+  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, slider->maximum()));
   h->addWidget(slider, 4);
 
   auto* pct = new QLabel(QStringLiteral("%1%").arg(slider->value()), row);
@@ -129,7 +130,30 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
   };
 
   QObject::connect(slider, &QSlider::valueChanged, row, applyVolume);
-  QObject::connect(slider, &QSlider::sliderReleased, row, [slider, applyVolume]() { applyVolume(slider->value()); });
+  QObject::connect(slider, &QSlider::sliderReleased, row, [graph, nodeId = node.id, slider, pct, applyVolume]() {
+    applyVolume(slider->value());
+
+    if (!graph || !slider || nodeId == 0) {
+      return;
+    }
+
+    // If PipeWire clamps the requested volume, it may not emit a new controls update.
+    // Force a short readback sync so the UI reflects the effective volume.
+    QTimer::singleShot(120, slider, [graph, nodeId, slider, pct]() {
+      if (!graph || !slider || nodeId == 0 || slider->isSliderDown()) {
+        return;
+      }
+      const PwNodeControls c = graph->nodeControls(nodeId).value_or(PwNodeControls{});
+      const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, slider->maximum());
+      if (slider->value() != volPct) {
+        const QSignalBlocker blocker(slider);
+        slider->setValue(volPct);
+      }
+      if (pct) {
+        pct->setText(QStringLiteral("%1%").arg(slider->value()));
+      }
+    });
+  });
   QObject::connect(mute, &QCheckBox::toggled, row, [graph, nodeId = node.id](bool checked) {
     if (!graph) {
       return;
@@ -265,10 +289,10 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
   h->addWidget(meter, 0);
 
   auto* slider = new QSlider(Qt::Horizontal, row);
-  slider->setRange(0, 150);
+  slider->setRange(0, 200);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);
-  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, 150));
+  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, slider->maximum()));
   h->addWidget(slider, 4);
 
   auto* pct = new QLabel(QStringLiteral("%1%").arg(slider->value()), row);
@@ -364,7 +388,30 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
   };
 
   QObject::connect(slider, &QSlider::valueChanged, row, applyVolume);
-  QObject::connect(slider, &QSlider::sliderReleased, row, [slider, applyVolume]() { applyVolume(slider->value()); });
+  QObject::connect(slider, &QSlider::sliderReleased, row, [graph, nodeId = stream.id, slider, pct, applyVolume]() {
+    applyVolume(slider->value());
+
+    if (!graph || !slider || nodeId == 0) {
+      return;
+    }
+
+    // Same rationale as device rows: ensure the fader reflects the effective volume even
+    // when PipeWire clamps and doesn't emit a follow-up update.
+    QTimer::singleShot(120, slider, [graph, nodeId, slider, pct]() {
+      if (!graph || !slider || nodeId == 0 || slider->isSliderDown()) {
+        return;
+      }
+      const PwNodeControls c = graph->nodeControls(nodeId).value_or(PwNodeControls{});
+      const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, slider->maximum());
+      if (slider->value() != volPct) {
+        const QSignalBlocker blocker(slider);
+        slider->setValue(volPct);
+      }
+      if (pct) {
+        pct->setText(QStringLiteral("%1%").arg(slider->value()));
+      }
+    });
+  });
   QObject::connect(mute, &QCheckBox::toggled, row, [graph, nodeId = stream.id](bool checked) {
     if (!graph) {
       return;
