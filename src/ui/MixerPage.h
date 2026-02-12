@@ -5,6 +5,7 @@
 #include <QPointer>
 
 #include <cstdint>
+#include <optional>
 
 class QLineEdit;
 class QScrollArea;
@@ -42,6 +43,26 @@ public slots:
   void updateForWindowVisibilityChange();
 
   private:
+    struct RebuildSnapshot final {
+      QString filter;
+      bool defaultDeviceSupported = false;
+      uint32_t defaultSinkId = 0;
+      uint32_t defaultSourceId = 0;
+      QVector<uint32_t> playback;
+      QVector<uint32_t> recording;
+      QVector<uint32_t> outputs;
+      QVector<uint32_t> inputs;
+      QVector<uint32_t> other;
+
+      bool operator==(const RebuildSnapshot& rhs) const
+      {
+        return filter == rhs.filter && defaultDeviceSupported == rhs.defaultDeviceSupported && defaultSinkId == rhs.defaultSinkId &&
+            defaultSourceId == rhs.defaultSourceId && playback == rhs.playback && recording == rhs.recording && outputs == rhs.outputs &&
+            inputs == rhs.inputs && other == rhs.other;
+      }
+      bool operator!=(const RebuildSnapshot& rhs) const { return !(*this == rhs); }
+    };
+
     enum class MeterMode {
       Off = 0,
       SelectedOnly = 1,
@@ -87,4 +108,6 @@ public slots:
   QHash<uint32_t, QPointer<QSlider>> m_volumeSliders;
   QHash<uint32_t, QPointer<QLabel>> m_volumePcts;
   QHash<uint32_t, QPointer<QCheckBox>> m_mutes;
+
+  std::optional<RebuildSnapshot> m_lastSnapshot;
 };

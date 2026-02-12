@@ -497,8 +497,11 @@ void MixerPage::scheduleRebuild()
     m_pendingRebuild = true;
     return;
   }
-  if (!m_rebuildTimer->isActive()) {
+  // Debounce: rebuild after topology/metadata settles.
+  if (m_rebuildTimer) {
     m_rebuildTimer->start();
+  } else {
+    rebuild();
   }
 }
 
@@ -599,47 +602,9 @@ void MixerPage::rebuild()
     return;
   }
 
-  m_meters.clear();
-  m_volumeSliders.clear();
-  m_volumePcts.clear();
-  m_mutes.clear();
-
   const QString filter = m_filter ? m_filter->text() : QString{};
 
-  if (auto* old = m_container->layout()) {
-    QLayoutItem* item = nullptr;
-    while ((item = old->takeAt(0)) != nullptr) {
-      if (auto* w = item->widget()) {
-        w->deleteLater();
-      }
-      delete item;
-    }
-    delete old;
-  }
-
-  auto* layout = new QVBoxLayout();
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(10);
-  m_container->setLayout(layout);
-
   const QList<PwNodeInfo> nodes = m_graph ? m_graph->nodes() : QList<PwNodeInfo>{};
-
-  QList<QPointer<LevelMeterWidget>> meters;
-
-  auto registerControls = [this](uint32_t nodeId, QSlider* slider, QLabel* pct, QCheckBox* mute) {
-    if (nodeId == 0) {
-      return;
-    }
-    if (slider) {
-      m_volumeSliders.insert(nodeId, slider);
-    }
-    if (pct) {
-      m_volumePcts.insert(nodeId, pct);
-    }
-    if (mute) {
-      m_mutes.insert(nodeId, mute);
-    }
-  };
 
   QList<PwNodeInfo> playback;
   QList<PwNodeInfo> recording;
@@ -692,6 +657,79 @@ void MixerPage::rebuild()
   std::sort(inputs.begin(), inputs.end(), sortByLabel);
   std::sort(other.begin(), other.end(), sortByLabel);
 
+  const bool defaultDeviceSupported = m_graph && m_graph->hasDefaultDeviceSupport();
+  const uint32_t defaultSinkId = m_graph ? m_graph->defaultAudioSinkId().value_or(0) : 0;
+  const uint32_t defaultSourceId = m_graph ? m_graph->defaultAudioSourceId().value_or(0) : 0;
+
+  RebuildSnapshot snapshot;
+  snapshot.filter = filter;
+  snapshot.defaultDeviceSupported = defaultDeviceSupported;
+  snapshot.defaultSinkId = defaultSinkId;
+  snapshot.defaultSourceId = defaultSourceId;
+  snapshot.playback.reserve(playback.size());
+  snapshot.recording.reserve(recording.size());
+  snapshot.outputs.reserve(outputs.size());
+  snapshot.inputs.reserve(inputs.size());
+  snapshot.other.reserve(other.size());
+  for (const auto& n : playback) {
+    snapshot.playback.push_back(n.id);
+  }
+  for (const auto& n : recording) {
+    snapshot.recording.push_back(n.id);
+  }
+  for (const auto& n : outputs) {
+    snapshot.outputs.push_back(n.id);
+  }
+  for (const auto& n : inputs) {
+    snapshot.inputs.push_back(n.id);
+  }
+  for (const auto& n : other) {
+    snapshot.other.push_back(n.id);
+  }
+
+  if (m_lastSnapshot.has_value() && snapshot == *m_lastSnapshot) {
+    return;
+  }
+  m_lastSnapshot = snapshot;
+
+  m_meters.clear();
+  m_volumeSliders.clear();
+  m_volumePcts.clear();
+  m_mutes.clear();
+
+  if (auto* old = m_container->layout()) {
+    QLayoutItem* item = nullptr;
+    while ((item = old->takeAt(0)) != nullptr) {
+      if (auto* w = item->widget()) {
+        w->deleteLater();
+      }
+      delete item;
+    }
+    delete old;
+  }
+
+  auto* layout = new QVBoxLayout();
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(10);
+  m_container->setLayout(layout);
+
+  QList<QPointer<LevelMeterWidget>> meters;
+
+  auto registerControls = [this](uint32_t nodeId, QSlider* slider, QLabel* pct, QCheckBox* mute) {
+    if (nodeId == 0) {
+      return;
+    }
+    if (slider) {
+      m_volumeSliders.insert(nodeId, slider);
+    }
+    if (pct) {
+      m_volumePcts.insert(nodeId, pct);
+    }
+    if (mute) {
+      m_mutes.insert(nodeId, mute);
+    }
+  };
+
   auto onVisualizeNode = [this](const PwNodeInfo& node) {
     emit visualizerTapRequested(node.name, node.mediaClass == QStringLiteral("Audio/Sink"));
   };
@@ -719,9 +757,6 @@ void MixerPage::rebuild()
       tr("Playback (apps)"), playback, outputs, m_graph, m_pw, filter, onEq, onVisualizeStream, registerControls, meters, m_container));
   layout->addWidget(mixer::makeStreamsSection(
       tr("Recording (apps)"), recording, inputs, m_graph, m_pw, filter, onEq, onVisualizeStream, registerControls, meters, m_container));
-
-  const uint32_t defaultSinkId = m_graph ? m_graph->defaultAudioSinkId().value_or(0) : 0;
-  const uint32_t defaultSourceId = m_graph ? m_graph->defaultAudioSourceId().value_or(0) : 0;
 
   auto repopulateDefaultBox = [this](QComboBox* box, QPushButton* button, const QList<PwNodeInfo>& devices, uint32_t currentDefaultId) {
     if (!box || !button) {
