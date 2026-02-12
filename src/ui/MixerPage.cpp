@@ -7,6 +7,7 @@
 #include "settings/SettingsKeys.h"
 #include "ui/EqDialog.h"
 #include "ui/LevelMeterWidget.h"
+#include "backend/VolumeScale.h"
 #include "ui/WindowVisibility.h"
 
 #include <QApplication>
@@ -540,7 +541,7 @@ void MixerPage::refreshControls()
 
     const auto controlsOpt = m_graph->nodeControls(nodeId);
     const PwNodeControls c = controlsOpt.value_or(PwNodeControls{});
-    const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, slider->maximum());
+    const int volPct = std::clamp(headroom::volume::linearToUiPercent(c.volume), 0, slider->maximum());
 
     if (slider->isEnabled() != c.hasVolume) {
       slider->setEnabled(c.hasVolume);

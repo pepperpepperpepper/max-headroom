@@ -1,4 +1,5 @@
 #include "PipeWireGraphInternal.h"
+#include "VolumeScale.h"
 
 #include <pipewire/core.h>
 #include <pipewire/node.h>
@@ -14,7 +15,7 @@ bool PipeWireGraph::setNodeVolume(uint32_t nodeId, float volume)
     return false;
   }
 
-  volume = std::clamp(volume, 0.0f, 2.0f);
+  volume = std::clamp(volume, 0.0f, headroom::volume::kUiMaxLinear);
 
   pw_thread_loop* loop = m_pw->threadLoop();
   pw_thread_loop_lock(loop);
@@ -119,4 +120,3 @@ bool PipeWireGraph::setNodeMute(uint32_t nodeId, bool mute)
   pw_thread_loop_unlock(loop);
   return res >= 0;
 }
-

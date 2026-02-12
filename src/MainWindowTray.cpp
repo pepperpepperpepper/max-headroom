@@ -18,6 +18,7 @@
 #include <QWidget>
 #include <QWidgetAction>
 
+#include "backend/VolumeScale.h"
 #include "backend/PatchbayProfileHooks.h"
 #include "backend/PatchbayProfiles.h"
 #include "backend/EqManager.h"
@@ -86,7 +87,7 @@ void MainWindow::setupTray()
   volumeLayout->addWidget(m_trayVolumeLabel);
 
   m_trayVolumeSlider = new QSlider(Qt::Horizontal, volumeWidget);
-  m_trayVolumeSlider->setRange(0, 200);
+  m_trayVolumeSlider->setRange(0, headroom::volume::kUiMaxPercent);
   m_trayVolumeSlider->setSingleStep(1);
   m_trayVolumeSlider->setPageStep(5);
   m_trayVolumeSlider->setValue(100);
@@ -178,7 +179,7 @@ void MainWindow::refreshTrayUi()
   const bool hasVolume = enabled && controls->hasVolume;
 
   const float vol = hasVolume ? controls->volume : 1.0f;
-  const int percent = static_cast<int>(std::round(std::clamp(vol, 0.0f, 2.0f) * 100.0f));
+  const int percent = std::clamp(headroom::volume::linearToUiPercent(vol), 0, headroom::volume::kUiMaxPercent);
   const bool muted = hasMute ? controls->mute : (hasVolume ? (percent <= 0) : false);
 
   if (m_trayMuteAction) {
@@ -190,11 +191,11 @@ void MainWindow::refreshTrayUi()
   if (m_trayVolumeSlider) {
     QSignalBlocker b(m_trayVolumeSlider);
     m_trayVolumeSlider->setEnabled(enabled && hasVolume);
-    m_trayVolumeSlider->setValue(std::clamp(percent, 0, 200));
+    m_trayVolumeSlider->setValue(percent);
   }
 
   if (m_trayVolumeLabel) {
-    m_trayVolumeLabel->setText(tr("%1%").arg(std::clamp(percent, 0, 200), 3));
+    m_trayVolumeLabel->setText(tr("%1%").arg(percent, 3));
   }
 
   QIcon icon = QIcon::fromTheme(QStringLiteral("audio-volume-high"));
@@ -211,7 +212,7 @@ void MainWindow::refreshTrayUi()
     icon = QIcon(QStringLiteral(":/icons/app.svg"));
   }
   m_tray->setIcon(icon);
-  m_tray->setToolTip(tr("Headroom — Output %1%").arg(std::clamp(percent, 0, 200)));
+  m_tray->setToolTip(tr("Headroom — Output %1%").arg(percent));
 }
 
 void MainWindow::showTabFromTray(const QString& key)
@@ -280,7 +281,7 @@ void MainWindow::applyTrayVolumePercent(int percent)
   if (sinkId == 0) {
     return;
   }
-  const float linear = std::clamp(static_cast<float>(percent) / 100.0f, 0.0f, 2.0f);
+  const float linear = headroom::volume::uiPercentToLinear(percent);
   m_graph->setNodeVolume(sinkId, linear);
   scheduleTrayRefresh();
 }

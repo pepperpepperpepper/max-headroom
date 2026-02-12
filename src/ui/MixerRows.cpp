@@ -2,6 +2,7 @@
 #include "backend/PipeWireGraph.h"
 #include "backend/PipeWireThread.h"
 #include "ui/LevelMeterWidget.h"
+#include "backend/VolumeScale.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -78,10 +79,10 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
   h->addWidget(meter, 0);
 
   auto* slider = new QSlider(Qt::Horizontal, row);
-  slider->setRange(0, 200);
+  slider->setRange(0, headroom::volume::kUiMaxPercent);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);
-  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, slider->maximum()));
+  slider->setValue(std::clamp(headroom::volume::linearToUiPercent(controls.volume), 0, slider->maximum()));
   h->addWidget(slider, 4);
 
   auto* pct = new QLabel(QStringLiteral("%1%").arg(slider->value()), row);
@@ -125,7 +126,7 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
       pct->setText(QStringLiteral("%1%").arg(snapped));
     }
     if (graph && nodeId != 0) {
-      graph->setNodeVolume(nodeId, static_cast<float>(snapped) / 100.0f);
+      graph->setNodeVolume(nodeId, headroom::volume::uiPercentToLinear(snapped));
     }
   };
 
@@ -144,7 +145,7 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
         return;
       }
       const PwNodeControls c = graph->nodeControls(nodeId).value_or(PwNodeControls{});
-      const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, slider->maximum());
+      const int volPct = std::clamp(headroom::volume::linearToUiPercent(c.volume), 0, slider->maximum());
       if (slider->value() != volPct) {
         const QSignalBlocker blocker(slider);
         slider->setValue(volPct);
@@ -289,10 +290,10 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
   h->addWidget(meter, 0);
 
   auto* slider = new QSlider(Qt::Horizontal, row);
-  slider->setRange(0, 200);
+  slider->setRange(0, headroom::volume::kUiMaxPercent);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);
-  slider->setValue(std::clamp(static_cast<int>(std::lround(controls.volume * 100.0f)), 0, slider->maximum()));
+  slider->setValue(std::clamp(headroom::volume::linearToUiPercent(controls.volume), 0, slider->maximum()));
   h->addWidget(slider, 4);
 
   auto* pct = new QLabel(QStringLiteral("%1%").arg(slider->value()), row);
@@ -383,7 +384,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
       pct->setText(QStringLiteral("%1%").arg(snapped));
     }
     if (graph && nodeId != 0) {
-      graph->setNodeVolume(nodeId, static_cast<float>(snapped) / 100.0f);
+      graph->setNodeVolume(nodeId, headroom::volume::uiPercentToLinear(snapped));
     }
   };
 
@@ -402,7 +403,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
         return;
       }
       const PwNodeControls c = graph->nodeControls(nodeId).value_or(PwNodeControls{});
-      const int volPct = std::clamp(static_cast<int>(std::lround(c.volume * 100.0f)), 0, slider->maximum());
+      const int volPct = std::clamp(headroom::volume::linearToUiPercent(c.volume), 0, slider->maximum());
       if (slider->value() != volPct) {
         const QSignalBlocker blocker(slider);
         slider->setValue(volPct);

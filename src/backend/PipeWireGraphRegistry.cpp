@@ -1,4 +1,5 @@
 #include "PipeWireGraphInternal.h"
+#include "VolumeScale.h"
 
 #include <pipewire/core.h>
 #include <pipewire/extensions/metadata.h>
@@ -561,11 +562,11 @@ void PipeWireGraph::onNodeParam(void* data, int /*seq*/, uint32_t id, uint32_t /
           if (old > 0.000001f) {
             const float ratio = volume / old;
             for (float& cv : controls.channelVolumes) {
-              cv = std::clamp(cv * ratio, 0.0f, 2.0f);
+              cv = std::clamp(cv * ratio, 0.0f, headroom::volume::kUiMaxLinear);
             }
           } else {
             for (float& cv : controls.channelVolumes) {
-              cv = std::clamp(volume, 0.0f, 2.0f);
+              cv = std::clamp(volume, 0.0f, headroom::volume::kUiMaxLinear);
             }
           }
         }
