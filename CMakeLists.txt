@@ -190,6 +190,8 @@ if (HEADROOM_BUILD_GUI)
     src/ui/VisualizerWidget.h
     src/ui/LevelMeterWidget.cpp
     src/ui/LevelMeterWidget.h
+    src/ui/VolumeSlider.cpp
+    src/ui/VolumeSlider.h
   )
 
   target_link_libraries(headroom

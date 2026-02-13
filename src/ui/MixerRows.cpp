@@ -24,6 +24,8 @@
 #include <functional>
 #include <optional>
 
+#include "ui/VolumeSlider.h"
+
 namespace mixer {
 bool movePlaybackStreamToSink(PipeWireGraph* graph, uint32_t streamId, uint32_t sinkId);
 bool moveCaptureStreamToSource(PipeWireGraph* graph, uint32_t streamId, uint32_t sourceId);
@@ -78,7 +80,7 @@ QWidget* makeNodeRow(PipeWireGraph* graph,
   }
   h->addWidget(meter, 0);
 
-  auto* slider = new QSlider(Qt::Horizontal, row);
+  auto* slider = new VolumeSlider(Qt::Horizontal, row);
   slider->setRange(0, headroom::volume::kUiMaxPercent);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);
@@ -289,7 +291,7 @@ QWidget* makeStreamRow(PipeWireGraph* graph,
   }
   h->addWidget(meter, 0);
 
-  auto* slider = new QSlider(Qt::Horizontal, row);
+  auto* slider = new VolumeSlider(Qt::Horizontal, row);
   slider->setRange(0, headroom::volume::kUiMaxPercent);
   slider->setEnabled(controls.hasVolume);
   slider->setTracking(true);

@@ -27,6 +27,7 @@
 #include "settings/SettingsKeys.h"
 #include "ui/MixerPage.h"
 #include "ui/PatchbayPage.h"
+#include "ui/VolumeSlider.h"
 #include "ui/WindowVisibility.h"
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -86,7 +87,7 @@ void MainWindow::setupTray()
   m_trayVolumeLabel->setMinimumWidth(40);
   volumeLayout->addWidget(m_trayVolumeLabel);
 
-  m_trayVolumeSlider = new QSlider(Qt::Horizontal, volumeWidget);
+  m_trayVolumeSlider = new VolumeSlider(Qt::Horizontal, volumeWidget);
   m_trayVolumeSlider->setRange(0, headroom::volume::kUiMaxPercent);
   m_trayVolumeSlider->setSingleStep(1);
   m_trayVolumeSlider->setPageStep(5);
