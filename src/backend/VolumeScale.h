@@ -11,11 +11,14 @@ inline constexpr float kUiMaxLinear = 3.548133f; // pa_sw_volume_to_linear(PA_VO
 
 inline float uiPercentToLinear(int percent)
 {
+  if (percent <= 0) {
+    return 0.0f;
+  }
   if (percent >= kUiMaxPercent) {
     return kUiMaxLinear;
   }
 
-  const float p = std::clamp(static_cast<float>(percent) / 100.0f, 0.0f, 1.0f);
+  const float p = static_cast<float>(percent) / 100.0f;
   return p * p * p;
 }
 

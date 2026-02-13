@@ -15,6 +15,22 @@ target_compile_options(headroom_unit_tests PRIVATE -Wall -Wextra -Wpedantic)
 
 add_test(NAME headroom_unit_tests COMMAND headroom_unit_tests)
 
+add_executable(headroom_volume_scale_tests
+  test_volume_scale.cpp
+)
+
+target_include_directories(headroom_volume_scale_tests PRIVATE ../src)
+
+target_link_libraries(headroom_volume_scale_tests
+  PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+
+target_compile_options(headroom_volume_scale_tests PRIVATE -Wall -Wextra -Wpedantic)
+
+add_test(NAME headroom_volume_scale_tests COMMAND headroom_volume_scale_tests)
+
 if (TARGET headroomctl)
   add_test(
     NAME headroomctl_contract_nodes_json
