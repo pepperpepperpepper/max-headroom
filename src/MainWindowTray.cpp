@@ -281,6 +281,18 @@ void MainWindow::applyTrayVolumePercent(int percent)
   if (sinkId == 0) {
     return;
   }
+
+  constexpr int kSnapPct = 100;
+  constexpr int kSnapThreshold = 2;
+  const int snapped = (std::abs(percent - kSnapPct) <= kSnapThreshold) ? kSnapPct : percent;
+  if (snapped != percent) {
+    if (m_trayVolumeSlider) {
+      const QSignalBlocker blocker(m_trayVolumeSlider);
+      m_trayVolumeSlider->setValue(snapped);
+    }
+    percent = snapped;
+  }
+
   const float linear = headroom::volume::uiPercentToLinear(percent);
   m_graph->setNodeVolume(sinkId, linear);
   scheduleTrayRefresh();
